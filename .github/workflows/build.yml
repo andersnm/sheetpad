@@ -1,0 +1,36 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ g++-mingw-w64-x86-64-posix
+
+      - name: Test core (native)
+        run: |
+          cmake -S . -B build-native -G Ninja
+          cmake --build build-native
+          ./build-native/core_tests
+
+      - name: Build Sheetpad.exe (MinGW-w64 cross-build)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+          cmake --build build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sheetpad-windows-x64
+          path: build/Sheetpad.exe
+          if-no-files-found: error

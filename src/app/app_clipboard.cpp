@@ -1,0 +1,221 @@
+#include <windows.h>
+#include <commctrl.h>
+#include <commdlg.h>
+#include <shellapi.h>
+#include <windowsx.h>
+
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "csv.h"
+#include "document.h"
+#include "formula_store.h"
+#include "text_encoding.h"
+#include "view.h"
+#include "app.h"
+
+using namespace sheetpad;
+
+namespace app {
+
+// ---------------------------------------------------------------- clipboard
+
+Table SelectionTable() {
+    const CellRange sel = Selection();
+    Table table;
+    for (int row = sel.top; row <= sel.bottom; ++row) {
+        Row cells;
+        for (int col = sel.left; col <= sel.right; ++col) {
+            const std::size_t r = DocRowOf(row);
+            const auto c = static_cast<std::size_t>(col);
+            // Formulas are copied as text so Excel pastes them as live formulas.
+            const std::string& formula = g.doc.Formula(r, c);
+            cells.push_back(formula.empty() ? g.doc.Cell(r, c) : formula);
+        }
+        table.push_back(std::move(cells));
+    }
+    return table;
+}
+
+std::string MakeClipboardHtml(const std::string& fragment) {
+    const std::string prefix = "<html>\r\n<body>\r\n<!--StartFragment-->";
+    const std::string suffix = "<!--EndFragment-->\r\n</body>\r\n</html>";
+    const char* headerFormat =
+        "Version:0.9\r\nStartHTML:%010lu\r\nEndHTML:%010lu\r\nStartFragment:%010lu\r\nEndFragment:%010lu\r\n";
+    char header[160];
+    const auto headerLength =
+        static_cast<unsigned long>(std::snprintf(header, sizeof(header), headerFormat, 0ul, 0ul, 0ul, 0ul));
+    const unsigned long startFragment = headerLength + static_cast<unsigned long>(prefix.size());
+    const unsigned long endFragment = startFragment + static_cast<unsigned long>(fragment.size());
+    const unsigned long endHtml = endFragment + static_cast<unsigned long>(suffix.size());
+    std::snprintf(header, sizeof(header), headerFormat, headerLength, endHtml, startFragment, endFragment);
+    return std::string(header) + prefix + fragment + suffix;
+}
+
+bool PutClipboardData(UINT format, const void* data, std::size_t bytes) {
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) {
+        return false;
+    }
+    void* target = GlobalLock(memory);
+    if (!target) {
+        GlobalFree(memory);
+        return false;
+    }
+    std::memcpy(target, data, bytes);
+    GlobalUnlock(memory);
+    if (!SetClipboardData(format, memory)) {
+        GlobalFree(memory);
+        return false;
+    }
+    return true;
+}
+
+// `moving` is set for Cut: pasted formulas keep their references instead of shifting.
+bool CopySelection(HWND window, bool moving) {
+    const Table table = SelectionTable();
+    const std::wstring text = Utf8ToWide(BuildTsv(table));
+    // Rich HTML is only worth building for modest selections; plain text is always provided.
+    const bool withHtml = table.size() * (table.empty() ? 0 : table[0].size()) <= 200000;
+    const std::string html = withHtml ? MakeClipboardHtml(BuildHtmlTable(table)) : std::string();
+    if (!OpenClipboard(window)) {
+        return false;
+    }
+    EmptyClipboard();
+    bool ok = PutClipboardData(CF_UNICODETEXT, text.c_str(), (text.size() + 1) * sizeof(wchar_t));
+    static const UINT htmlFormat = RegisterClipboardFormatW(L"HTML Format");
+    if (withHtml && htmlFormat != 0) {
+        PutClipboardData(htmlFormat, html.c_str(), html.size() + 1);
+    }
+    const CellRange sel = Selection();
+    g.copySequence = GetClipboardSequenceNumber();
+    g.copyOrigin = {static_cast<int>(DocRowOf(sel.top)), sel.left};
+    g.copyMoving = moving;
+    CloseClipboard();
+    return ok;
+}
+
+void ClearSelection(HWND window) {
+    const CellRange sel = Selection();
+    std::vector<CellEdit> edits;
+    const int lastRow = std::min(sel.bottom, DataRows() - 1);
+    const int lastCol = std::min(sel.right, static_cast<int>(g.doc.ColumnCount()) - 1);
+    for (int row = sel.top; row <= lastRow; ++row) {
+        for (int col = sel.left; col <= lastCol; ++col) {
+            const std::size_t r = DocRowOf(row);
+            const auto c = static_cast<std::size_t>(col);
+            if (!g.doc.Cell(r, c).empty() || !g.doc.Formula(r, c).empty()) {
+                edits.push_back({r, c, std::string()});
+            }
+        }
+    }
+    g.doc.ApplyEdits(std::move(edits));
+    AfterDocumentChanged(window);
+}
+
+// Builds the edit for one pasted cell. Text that parses as a formula becomes a formula; when the clipboard came
+// from this app, relative references shift by the distance from the copied cell, as in Excel.
+CellEdit PastedCell(std::size_t row, std::size_t col, const std::string& text, bool internal, Pos origin) {
+    if (text.size() > 1 && text.front() == '=' && ParseFormula(text)) {
+        if (!internal) {
+            return {row, col, text, true};
+        }
+        return {row, col,
+                RewriteForShift(text, static_cast<long long>(row) - origin.row,
+                                static_cast<long long>(col) - origin.col),
+                true};
+    }
+    return {row, col, text, false};
+}
+
+// Copies the first row (or column) of the selection over the rest, or the neighbor above (or left) when only
+// one row (or column) is selected. Relative references in formulas shift as in Excel.
+void FillSelection(HWND window, bool down) {
+    const CellRange sel = Selection();
+    std::vector<CellEdit> edits;
+    for (int row = sel.top; row <= sel.bottom; ++row) {
+        for (int col = sel.left; col <= sel.right; ++col) {
+            const int sourceRow = down ? (sel.bottom > sel.top ? sel.top : sel.top - 1) : row;
+            const int sourceCol = down ? col : (sel.right > sel.left ? sel.left : sel.left - 1);
+            if (sourceRow < 0 || sourceCol < 0 || (sourceRow == row && sourceCol == col)) {
+                continue;
+            }
+            const std::size_t sr = DocRowOf(sourceRow);
+            const auto sc = static_cast<std::size_t>(sourceCol);
+            const std::size_t dr = DocRowOf(row);
+            const std::string& formula = g.doc.Formula(sr, sc);
+            if (formula.empty()) {
+                edits.push_back({dr, static_cast<std::size_t>(col), g.doc.Cell(sr, sc)});
+            } else {
+                edits.push_back({dr, static_cast<std::size_t>(col),
+                                 RewriteForShift(formula, static_cast<long long>(dr) - static_cast<long long>(sr),
+                                                 col - sourceCol),
+                                 true});
+            }
+        }
+    }
+    g.doc.ApplyEdits(std::move(edits));
+    AfterDocumentChanged(window);
+}
+
+void PasteClipboard(HWND window) {
+    if (!OpenClipboard(window)) {
+        return;
+    }
+    const bool internal = g.copySequence != 0 && g.copySequence == GetClipboardSequenceNumber();
+    std::wstring wide;
+    if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
+        if (const auto* text = static_cast<const wchar_t*>(GlobalLock(handle))) {
+            wide = text;
+            GlobalUnlock(handle);
+        }
+    }
+    CloseClipboard();
+    if (wide.empty()) {
+        return;
+    }
+
+    const std::string utf8 = WideToUtf8(wide);
+    const ParsedCsv parsed = ParseCsv(utf8, DetectPasteDelimiter(utf8));
+    if (parsed.rows.empty()) {
+        return;
+    }
+
+    const CellRange sel = Selection();
+    const bool singleValue = parsed.rows.size() == 1 && parsed.rows[0].size() == 1;
+    const bool fill = singleValue && (sel.bottom > sel.top || sel.right > sel.left);
+    const bool shifts = internal && !g.copyMoving;
+    std::vector<CellEdit> edits;
+    if (fill) {
+        for (int row = sel.top; row <= sel.bottom; ++row) {
+            for (int col = sel.left; col <= sel.right; ++col) {
+                edits.push_back(PastedCell(DocRowOf(row), static_cast<std::size_t>(col), parsed.rows[0][0], shifts,
+                                           g.copyOrigin));
+            }
+        }
+    } else {
+        for (std::size_t r = 0; r < parsed.rows.size(); ++r) {
+            for (std::size_t c = 0; c < parsed.rows[r].size(); ++c) {
+                edits.push_back(PastedCell(DocRowOf(sel.top + static_cast<int>(r)),
+                                           static_cast<std::size_t>(sel.left) + c, parsed.rows[r][c], shifts,
+                                           g.copyOrigin));
+            }
+        }
+    }
+    g.doc.ApplyEdits(std::move(edits));
+    AfterDocumentChanged(window);
+    if (!fill) {
+        const Pos end{sel.top + static_cast<int>(parsed.rows.size()) - 1,
+                      sel.left + static_cast<int>(parsed.columnCount) - 1};
+        SetSelection(window, {sel.top, sel.left}, end);
+    }
+}
+
+}
