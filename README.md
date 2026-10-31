@@ -1,7 +1,7 @@
 # Sheetpad
 
 Sheetpad is a small, fast, native Windows editor for CSV and TSV files.
-Sheetpad is to .csv-files what Notepad is to text files.
+Sheetpad is to CSV files what Notepad is to text files.
 
 ## Screenshot
 
