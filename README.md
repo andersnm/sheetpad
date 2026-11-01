@@ -14,8 +14,7 @@ Sheetpad is to CSV files what Notepad is to text files.
 - Unlimited undo/redo
 - Cut/copy/paste as TSV and HTML
 - Copy and paste table data between applications
-- Import CSV/HTML and Paste Special with a preview of separator, quote, encoding and span handling (see
-  [docs/import.md](docs/import.md))
+- Import CSV/HTML with custom options and preview
 - Range, row and column selection
 - Column filters, sorting, searching
 - Formula inspector pane

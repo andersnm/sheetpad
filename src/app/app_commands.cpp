@@ -218,6 +218,21 @@ void App::RunCommand(UINT command) {
         }
         break;
     }
+    case kCmdLineEndingCrLf:
+    case kCmdLineEndingLf: {
+        const bool crlf = command == kCmdLineEndingCrLf;
+        if (doc.crlf != crlf) {
+            doc.crlf = crlf;
+            viewDirty = true;
+            UpdateTitle();
+        }
+        break;
+    }
+    case kCmdTrailingNewline:
+        doc.trailingNewline = !doc.trailingNewline;
+        viewDirty = true;
+        UpdateTitle();
+        break;
     case kCmdAutofit: {
         // The selection always has an active cell; a lone cell counts as "no columns selected", so fit them all.
         const CellRange sel = Selection();

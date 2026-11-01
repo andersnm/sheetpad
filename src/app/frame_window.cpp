@@ -84,6 +84,9 @@ void FrameWindow::UpdateMenu(HMENU menu) {
     EnableMenuItem(menu, kCmdReapply, MF_BYCOMMAND | (app_.view.Active() ? MF_ENABLED : MF_GRAYED));
     CheckMenuRadioItem(menu, kCmdEncodingAnsi, kCmdEncodingUtf16Le,
                        kCmdEncodingAnsi + static_cast<UINT>(app_.doc.encoding), MF_BYCOMMAND);
+    CheckMenuRadioItem(menu, kCmdLineEndingCrLf, kCmdLineEndingLf, app_.doc.crlf ? kCmdLineEndingCrLf : kCmdLineEndingLf,
+                       MF_BYCOMMAND);
+    CheckMenuItem(menu, kCmdTrailingNewline, MF_BYCOMMAND | (app_.doc.trailingNewline ? MF_CHECKED : MF_UNCHECKED));
 }
 
 void FrameWindow::Layout() {
