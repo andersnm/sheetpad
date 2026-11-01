@@ -66,14 +66,14 @@ bool App::LoadFile(const std::wstring& filePath) {
     const WaitCursor wait;
     std::string bytes;
     if (!ReadFileBytes(filePath, bytes)) {
-        MessageBoxW(grid, L"The file could not be read.", L"Sheetpad", MB_OK | MB_ICONERROR);
+        MessageBoxW(grid, Res(IDS_ERR_READ_FILE).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONERROR);
         return false;
     }
     Encoding encoding = Encoding::Utf8;
     const std::string text = DecodeFileBytes(bytes, encoding);
     ParsedCsv parsed = ParseCsv(text, HasExtension(filePath, L".tsv") ? '\t' : DetectDelimiter(text));
     if (parsed.unterminatedQuote) {
-        MessageBoxW(grid, L"The file ends inside a quoted field, so it is not valid CSV.", L"Sheetpad",
+        MessageBoxW(grid, Res(IDS_ERR_UNTERMINATED_QUOTE).c_str(), Res(IDS_APP_TITLE).c_str(),
                     MB_OK | MB_ICONERROR);
         return false;
     }
@@ -87,10 +87,7 @@ bool App::LoadFile(const std::wstring& filePath) {
     if (ReadFileBytes(filePath + kFormulaSuffix, sidecar) && !ApplyFormulaJson(doc, sidecar, &view)) {
         sidecarInvalid = true;
         view = RowView{};
-        MessageBoxW(grid,
-                    L"The formula file next to this CSV could not be read, so the formulas were not loaded. "
-                    L"It will be left untouched unless you save formulas of your own.",
-                    L"Sheetpad", MB_OK | MB_ICONWARNING);
+        MessageBoxW(grid, Res(IDS_WARN_FORMULA_FILE).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONWARNING);
     }
     path = filePath;
     ResetView();
@@ -109,7 +106,7 @@ bool App::SaveTo(const std::wstring& targetPath) {
     }
     const std::string bytes = EncodeFileText(doc.Serialize(), doc.encoding);
     if (!WriteFileAtomic(targetPath, bytes)) {
-        MessageBoxW(grid, L"The file could not be saved.", L"Sheetpad", MB_OK | MB_ICONERROR);
+        MessageBoxW(grid, Res(IDS_ERR_SAVE_FILE).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -118,7 +115,7 @@ bool App::SaveTo(const std::wstring& targetPath) {
     const bool samePath = targetPath == path;
     if (!formulaJson.empty()) {
         if (!WriteFileAtomic(formulaPath, formulaJson)) {
-            MessageBoxW(grid, L"The CSV was saved, but the formula file could not be written.", L"Sheetpad",
+            MessageBoxW(grid, Res(IDS_ERR_SAVE_FORMULAS).c_str(), Res(IDS_APP_TITLE).c_str(),
                         MB_OK | MB_ICONERROR);
             return false;
         }
@@ -140,11 +137,14 @@ bool App::PickPath(bool save, std::wstring& result) {
     if (save && !path.empty()) {
         wcsncpy(buffer.data(), path.c_str(), buffer.size() - 1);
     }
+    // The filter is stored with '|' separators because string table entries cannot contain NULs.
+    std::wstring filter = Res(IDS_FILE_FILTER);
+    std::replace(filter.begin(), filter.end(), L'|', L'\0');
+    filter.push_back(L'\0');
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = frame;
-    dialog.lpstrFilter =
-        L"CSV and tab-separated files (*.csv;*.tsv)\0*.csv;*.tsv\0All files (*.*)\0*.*\0";
+    dialog.lpstrFilter = filter.c_str();
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.lpstrDefExt = L"csv";
@@ -172,9 +172,9 @@ bool App::ConfirmDiscard() {
     if (!IsDirty()) {
         return true;
     }
-    const std::wstring prompt =
-        L"Do you want to save changes to " + (path.empty() ? std::wstring(L"Untitled") : BaseName(path)) + L"?";
-    switch (MessageBoxW(grid, prompt.c_str(), L"Sheetpad", MB_YESNOCANCEL | MB_ICONWARNING)) {
+    std::wstring prompt = Res(IDS_CONFIRM_SAVE);
+    prompt.replace(prompt.find(L"%1"), 2, path.empty() ? Res(IDS_UNTITLED) : BaseName(path));
+    switch (MessageBoxW(grid, prompt.c_str(), Res(IDS_APP_TITLE).c_str(), MB_YESNOCANCEL | MB_ICONWARNING)) {
     case IDYES: return Save();
     case IDNO: return true;
     default: return false;

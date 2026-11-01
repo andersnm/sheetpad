@@ -42,9 +42,8 @@ void App::CreateFonts(HWND window) {
 }
 
 void App::UpdateTitle() {
-    const std::wstring title =
-        std::wstring(IsDirty() ? L"*" : L"") + (path.empty() ? std::wstring(L"Untitled") : BaseName(path)) +
-        L" - Sheetpad";
+    const std::wstring title = std::wstring(IsDirty() ? L"*" : L"") +
+                               (path.empty() ? Res(IDS_UNTITLED) : BaseName(path)) + L" - " + Res(IDS_APP_TITLE);
     SetWindowTextW(frame, title.c_str());
 }
 
@@ -152,6 +151,12 @@ bool App::TextControlFocused() const {
 }
 
 // ---------------------------------------------------------------- helpers
+
+std::wstring Res(UINT id) {
+    const wchar_t* text = nullptr;
+    const int length = LoadStringW(GetModuleHandleW(nullptr), id, reinterpret_cast<LPWSTR>(&text), 0);
+    return length > 0 ? std::wstring(text, static_cast<std::size_t>(length)) : std::wstring();
+}
 
 std::wstring ColumnName(int col) {
     std::wstring name;

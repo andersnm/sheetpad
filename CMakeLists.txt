@@ -47,6 +47,8 @@ if(WIN32)
         src/app/app.rc
     )
     target_include_directories(Sheetpad PRIVATE src/app)
+    set_source_files_properties(src/app/app.rc PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/app/resource.h;${CMAKE_CURRENT_SOURCE_DIR}/src/app/app.ico;${CMAKE_CURRENT_SOURCE_DIR}/src/app/app.manifest")
     target_link_libraries(Sheetpad PRIVATE sheetpad_core comdlg32 comctl32 user32 gdi32 shell32)
     target_compile_definitions(Sheetpad PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 

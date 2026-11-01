@@ -4,47 +4,49 @@
 #include <string>
 
 #include "platform.h"
+#include "resource.h"
 
 // Constants and small types shared by every component of the application.
 namespace app {
 
+// Typed names for the command identifiers of resource.h.
 enum Command : UINT {
-    kCmdNew = 1001,
-    kCmdOpen,
-    kCmdSave,
-    kCmdSaveAs,
-    kCmdExit,
-    kCmdUndo,
-    kCmdRedo,
-    kCmdCut,
-    kCmdCopy,
-    kCmdPaste,
-    kCmdDelete,
-    kCmdSelectAll,
-    kCmdInsertRowAbove,
-    kCmdInsertRowBelow,
-    kCmdDeleteRows,
-    kCmdDuplicateRow,
-    kCmdInsertColumnLeft,
-    kCmdInsertColumnRight,
-    kCmdDeleteColumns,
-    kCmdFillDown,
-    kCmdFillRight,
-    kCmdFind,
-    kCmdFindNext,
-    kCmdFindPrev,
-    kCmdFindClose,
-    kCmdHeaderRow,
-    kCmdFilterColumn,
-    kCmdClearFilters,
-    kCmdSortAsc,
-    kCmdSortDesc,
-    kCmdSortAddAsc,
-    kCmdSortAddDesc,
-    kCmdClearSort,
-    kCmdApplySort,
-    kCmdReapply,
-    kCmdInspector,
+    kCmdNew = IDM_FILE_NEW,
+    kCmdOpen = IDM_FILE_OPEN,
+    kCmdSave = IDM_FILE_SAVE,
+    kCmdSaveAs = IDM_FILE_SAVEAS,
+    kCmdExit = IDM_FILE_EXIT,
+    kCmdUndo = IDM_EDIT_UNDO,
+    kCmdRedo = IDM_EDIT_REDO,
+    kCmdCut = IDM_EDIT_CUT,
+    kCmdCopy = IDM_EDIT_COPY,
+    kCmdPaste = IDM_EDIT_PASTE,
+    kCmdDelete = IDM_EDIT_DELETE,
+    kCmdSelectAll = IDM_EDIT_SELECTALL,
+    kCmdInsertRowAbove = IDM_TABLE_INSERTROWABOVE,
+    kCmdInsertRowBelow = IDM_TABLE_INSERTROWBELOW,
+    kCmdDeleteRows = IDM_TABLE_DELETEROWS,
+    kCmdDuplicateRow = IDM_TABLE_DUPLICATEROW,
+    kCmdInsertColumnLeft = IDM_TABLE_INSERTCOLUMNLEFT,
+    kCmdInsertColumnRight = IDM_TABLE_INSERTCOLUMNRIGHT,
+    kCmdDeleteColumns = IDM_TABLE_DELETECOLUMNS,
+    kCmdFillDown = IDM_EDIT_FILLDOWN,
+    kCmdFillRight = IDM_EDIT_FILLRIGHT,
+    kCmdFind = IDM_EDIT_FIND,
+    kCmdFindNext = IDM_EDIT_FINDNEXT,
+    kCmdFindPrev = IDM_EDIT_FINDPREV,
+    kCmdFindClose = IDM_EDIT_FINDCLOSE,
+    kCmdHeaderRow = IDM_DATA_HEADERROW,
+    kCmdFilterColumn = IDM_DATA_FILTERCOLUMN,
+    kCmdClearFilters = IDM_DATA_CLEARFILTERS,
+    kCmdSortAsc = IDM_DATA_SORTASC,
+    kCmdSortDesc = IDM_DATA_SORTDESC,
+    kCmdSortAddAsc = IDM_DATA_SORTADDASC,
+    kCmdSortAddDesc = IDM_DATA_SORTADDDESC,
+    kCmdClearSort = IDM_DATA_CLEARSORT,
+    kCmdApplySort = IDM_DATA_APPLYSORT,
+    kCmdReapply = IDM_DATA_REAPPLY,
+    kCmdInspector = IDM_VIEW_INSPECTOR,
 };
 
 constexpr wchar_t kWindowClass[] = L"SheetpadGrid";
@@ -55,18 +57,6 @@ constexpr std::size_t kBlankColumns = 8;
 constexpr wchar_t kFormulaSuffix[] = L".formulas.json";
 
 constexpr int kEditControlId = 2000;
-
-// Find bar controls.
-constexpr int kFindLabelId = 3000;
-constexpr int kFindEditId = 3001;
-constexpr int kFindNextId = 3002;
-constexpr int kFindPrevId = 3003;
-constexpr int kFindCaseId = 3004;
-constexpr int kFindWholeId = 3005;
-constexpr int kFindRegexId = 3006;
-constexpr int kFindColumnId = 3007;
-constexpr int kFindCloseId = 3008;
-constexpr int kFindResultId = 3009;
 
 constexpr int kInspectorId = 5000;
 
@@ -102,6 +92,8 @@ inline bool KeyDown(int vk) {
     return (GetKeyState(vk) & 0x8000) != 0;
 }
 
+// The string table entry `id` of the resource file.
+std::wstring Res(UINT id);
 std::wstring ColumnName(int col);
 std::wstring BaseName(const std::wstring& path);
 int FloorDiv(int value, int divisor);

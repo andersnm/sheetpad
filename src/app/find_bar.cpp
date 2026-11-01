@@ -1,7 +1,9 @@
 #include "find_bar.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
+#include <utility>
 
 #include "app.h"
 #include "text_encoding.h"
@@ -13,73 +15,81 @@ namespace app {
 // ---------------------------------------------------------------- find bar
 
 LRESULT FindEdit::WindowProc(UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_KEYDOWN: {
-        const bool shift = KeyDown(VK_SHIFT);
-        if (wParam == VK_RETURN || wParam == VK_F3) {
-            app_.findBar.FindNext(!shift, false);
-            return 0;
-        }
-        if (wParam == VK_ESCAPE) {
-            app_.findBar.Show(false);
-            return 0;
-        }
-        if (KeyDown(VK_CONTROL) && wParam == 'A') {
-            SendMessageW(*this, EM_SETSEL, 0, -1);
-            return 0;
-        }
-        if (KeyDown(VK_CONTROL) && wParam == 'F') {
-            SendMessageW(*this, EM_SETSEL, 0, -1);
-            return 0;
-        }
-        break;
+    if (message == WM_KEYDOWN && wParam == 'A' && KeyDown(VK_CONTROL)) {
+        SendMessageW(*this, EM_SETSEL, 0, -1);
+        return 0;
     }
-    case WM_CHAR:
-        if (wParam == VK_RETURN || wParam == VK_ESCAPE || (wParam == 1 && KeyDown(VK_CONTROL))) {
-            return 0;
-        }
-        break;
-    default:
-        break;
+    // Ctrl+A would otherwise beep.
+    if (message == WM_CHAR && wParam == 1) {
+        return 0;
     }
     return DefaultProc(message, wParam, lParam);
 }
 
 void FindBar::Create(HWND frame, HINSTANCE instance) {
-    frame_ = frame;
-    const auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id, DWORD exStyle = 0) {
-        HWND control = CreateWindowExW(exStyle, cls, text, WS_CHILD | style, 0, 0, 10, 10, frame,
-                                       reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
+    dialog_.Attach(CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_FIND), frame, DialogProc,
+                                      reinterpret_cast<LPARAM>(this)));
+    const auto bind = [&](WindowHandle& control, int id) {
+        control.Attach(GetDlgItem(dialog_, id));
         SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(app_.font), TRUE);
-        return control;
     };
-    make(L"STATIC", L"Find:", SS_CENTERIMAGE, kFindLabelId);
-    edit_.Subclass(make(L"EDIT", L"", ES_AUTOHSCROLL, kFindEditId, WS_EX_CLIENTEDGE));
-    make(L"BUTTON", L"Previous", BS_PUSHBUTTON, kFindPrevId);
-    make(L"BUTTON", L"Next", BS_PUSHBUTTON, kFindNextId);
-    make(L"BUTTON", L"Match case", BS_AUTOCHECKBOX, kFindCaseId);
-    make(L"BUTTON", L"Whole cell", BS_AUTOCHECKBOX, kFindWholeId);
-    make(L"BUTTON", L"Regex", BS_AUTOCHECKBOX, kFindRegexId);
-    make(L"BUTTON", L"This column", BS_AUTOCHECKBOX, kFindColumnId);
-    result_.Attach(make(L"STATIC", L"", SS_CENTERIMAGE | SS_ENDELLIPSIS, kFindResultId));
-    make(L"BUTTON", L"Close", BS_PUSHBUTTON, kFindCloseId);
+    bind(label_, IDC_FIND_LABEL);
+    edit_.Subclass(GetDlgItem(dialog_, IDC_FIND_EDIT));
+    SendMessageW(edit_, WM_SETFONT, reinterpret_cast<WPARAM>(app_.font), TRUE);
+    bind(previous_, IDC_FIND_PREV);
+    bind(next_, IDC_FIND_NEXT);
+    bind(matchCase_, IDC_FIND_CASE);
+    bind(wholeCell_, IDC_FIND_WHOLE);
+    bind(regex_, IDC_FIND_REGEX);
+    bind(thisColumn_, IDC_FIND_COLUMN);
+    bind(result_, IDC_FIND_RESULT);
+    bind(close_, IDC_FIND_CLOSE);
 }
 
-void FindBar::SetResult(const wchar_t* text) {
-    SetWindowTextW(result_, text);
+INT_PTR CALLBACK FindBar::DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_INITDIALOG) {
+        SetWindowLongPtrW(dialog, DWLP_USER, lParam);
+        return FALSE;  // the find bar is created hidden and must not take the focus
+    }
+    auto* self = reinterpret_cast<FindBar*>(GetWindowLongPtrW(dialog, DWLP_USER));
+    if (self && message == WM_COMMAND) {
+        self->HandleCommand(LOWORD(wParam), HIWORD(wParam));
+        return TRUE;
+    }
+    return FALSE;
 }
 
-bool FindBar::Checked(int id) const {
-    return SendMessageW(GetDlgItem(frame_, id), BM_GETCHECK, 0, 0) == BST_CHECKED;
+bool FindBar::PreTranslate(MSG& message) {
+    if (!visible_) {
+        return false;
+    }
+    if (IsChild(dialog_, message.hwnd)) {
+        return IsDialogMessageW(dialog_, &message) != FALSE;
+    }
+    if (message.message == WM_SYSCHAR) {
+        // Lets a mnemonic work from the grid; IsDialogMessage only looks at messages for its own controls.
+        MSG routed = message;
+        routed.hwnd = edit_;
+        return IsDialogMessageW(dialog_, &routed) != FALSE;
+    }
+    return false;
+}
+
+void FindBar::SetResult(const std::wstring& text) {
+    SetWindowTextW(result_, text.c_str());
+}
+
+bool FindBar::Checked(const WindowHandle& checkbox) {
+    return SendMessageW(checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
 }
 
 void FindBar::UpdateMatcher() {
     FindOptions options;
     options.text = WideToUtf8(WindowText(edit_));
-    options.matchCase = Checked(kFindCaseId);
-    options.wholeCell = Checked(kFindWholeId);
-    options.regex = Checked(kFindRegexId);
-    columnOnly_ = Checked(kFindColumnId);
+    options.matchCase = Checked(matchCase_);
+    options.wholeCell = Checked(wholeCell_);
+    options.regex = Checked(regex_);
+    columnOnly_ = Checked(thisColumn_);
     matcher_.emplace(options);
     InvalidateRect(app_.grid, nullptr, FALSE);
 }
@@ -89,9 +99,7 @@ void FindBar::Show(bool show) {
         return;
     }
     visible_ = show;
-    for (int id = kFindLabelId; id <= kFindResultId; ++id) {
-        ShowWindow(GetDlgItem(frame_, id), show ? SW_SHOW : SW_HIDE);
-    }
+    ShowWindow(dialog_, show ? SW_SHOW : SW_HIDE);
     app_.frame.Layout();
     if (show) {
         SetFocus(edit_);
@@ -104,24 +112,33 @@ void FindBar::Show(bool show) {
     InvalidateRect(app_.grid, nullptr, FALSE);
 }
 
-// Places the controls in a row starting at `top`.
-void FindBar::Layout(int top) {
+int FindBar::Height() const {
+    return app_.m.rowHeight + app_.Scale(8);
+}
+
+// Places the dialog in the strip starting at `top` and the controls in a row inside it.
+void FindBar::Layout(int top, int width) {
+    MoveWindow(dialog_, 0, top, width, Height(), TRUE);
+    const int y = app_.Scale(4);
     const int h = app_.m.rowHeight;
     int x = app_.Scale(6);
-    const auto place = [&](int id, int width) {
-        MoveWindow(GetDlgItem(frame_, id), x, top, width, h, TRUE);
-        x += width + app_.Scale(6);
-    };
-    place(kFindLabelId, app_.Scale(40));
-    place(kFindEditId, app_.Scale(220));
-    place(kFindPrevId, app_.Scale(56));
-    place(kFindNextId, app_.Scale(56));
-    place(kFindCaseId, app_.Scale(96));
-    place(kFindWholeId, app_.Scale(92));
-    place(kFindRegexId, app_.Scale(64));
-    place(kFindColumnId, app_.Scale(104));
-    place(kFindResultId, app_.Scale(110));
-    place(kFindCloseId, app_.Scale(60));
+    const std::array<std::pair<const WindowHandle*, int>, 10> row{{
+        {&label_, 40},
+        {&edit_, 220},
+        {&previous_, 56},
+        {&next_, 56},
+        {&matchCase_, 96},
+        {&wholeCell_, 92},
+        {&regex_, 64},
+        {&thisColumn_, 104},
+        {&result_, 110},
+        {&close_, 60},
+    }};
+    for (const auto& [control, pixels] : row) {
+        const int w = app_.Scale(pixels);
+        MoveWindow(*control, x, y, w, h, TRUE);
+        x += w + app_.Scale(6);
+    }
 }
 
 bool FindBar::FindNext(bool forward, bool includeCurrent) {
@@ -130,7 +147,7 @@ bool FindBar::FindNext(bool forward, bool includeCurrent) {
         return false;
     }
     if (!matcher_->Valid()) {
-        SetResult(L"Invalid pattern");
+        SetResult(Res(IDS_FIND_INVALID));
         return false;
     }
     const int rows = app_.DataRows();
@@ -152,32 +169,36 @@ bool FindBar::FindNext(bool forward, bool includeCurrent) {
             return true;
         }
     }
-    SetResult(L"Not found");
+    SetResult(Res(IDS_FIND_NOT_FOUND));
     return false;
 }
 
 void FindBar::HandleCommand(int id, int code) {
     switch (id) {
-    case kFindEditId:
+    case IDC_FIND_EDIT:
         if (code == EN_CHANGE) {
             UpdateMatcher();
             FindNext(true, true);
         }
         break;
-    case kFindNextId:
-    case kFindPrevId:
-        FindNext(id == kFindNextId, false);
+    case IDOK:  // Enter, as sent by the dialog manager
+        FindNext(!KeyDown(VK_SHIFT), false);
+        break;
+    case IDC_FIND_NEXT:
+    case IDC_FIND_PREV:
+        FindNext(id == IDC_FIND_NEXT, false);
         SetFocus(edit_);
         break;
-    case kFindCaseId:
-    case kFindWholeId:
-    case kFindRegexId:
-    case kFindColumnId:
+    case IDC_FIND_CASE:
+    case IDC_FIND_WHOLE:
+    case IDC_FIND_REGEX:
+    case IDC_FIND_COLUMN:
         UpdateMatcher();
         FindNext(true, true);
         SetFocus(edit_);
         break;
-    case kFindCloseId:
+    case IDC_FIND_CLOSE:
+    case IDCANCEL:  // Escape
         Show(false);
         break;
     default:

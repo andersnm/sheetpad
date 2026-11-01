@@ -64,9 +64,9 @@ bool App::RegisterClasses(HINSTANCE instance) {
     frameClass.style = 0;
     frameClass.lpszClassName = kFrameClass;
     frameClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    frameClass.hIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+    frameClass.hIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
                                                       GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0));
-    frameClass.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+    frameClass.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
                                                         GetSystemMetrics(SM_CXSMICON),
                                                         GetSystemMetrics(SM_CYSMICON), 0));
 
@@ -76,7 +76,7 @@ bool App::RegisterClasses(HINSTANCE instance) {
 
     for (const WNDCLASSEXW* cls : {&windowClass, &frameClass, &filterClass}) {
         if (!WindowHandle::Register(*cls)) {
-            MessageBoxW(nullptr, L"The application window could not be registered.", L"Sheetpad",
+            MessageBoxW(nullptr, Res(IDS_ERR_REGISTER_CLASS).c_str(), Res(IDS_APP_TITLE).c_str(),
                         MB_OK | MB_ICONERROR);
             return false;
         }
@@ -98,7 +98,7 @@ int App::Run(HINSTANCE instance, int showCommand) {
     InstallTextHooks();
 
     if (!frame.Create(instance)) {
-        MessageBoxW(nullptr, L"The application window could not be created.", L"Sheetpad", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, Res(IDS_ERR_CREATE_WINDOW).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -114,33 +114,7 @@ int App::Run(HINSTANCE instance, int showCommand) {
     ShowWindow(frame, showCommand);
     UpdateWindow(frame);
 
-    const std::array<ACCEL, 23> accelerators{{
-        {FVIRTKEY | FCONTROL | FSHIFT, 'I', kCmdInspector},
-        {FVIRTKEY | FCONTROL, 'F', kCmdFind},
-        {FVIRTKEY, VK_F3, kCmdFindNext},
-        {FVIRTKEY | FSHIFT, VK_F3, kCmdFindPrev},
-        {FVIRTKEY | FCONTROL, 'N', kCmdNew},
-        {FVIRTKEY | FCONTROL, 'O', kCmdOpen},
-        {FVIRTKEY | FCONTROL, 'S', kCmdSave},
-        {FVIRTKEY | FCONTROL | FSHIFT, 'S', kCmdSaveAs},
-        {FVIRTKEY | FCONTROL, 'Z', kCmdUndo},
-        {FVIRTKEY | FCONTROL, 'Y', kCmdRedo},
-        {FVIRTKEY | FCONTROL | FSHIFT, 'Z', kCmdRedo},
-        {FVIRTKEY | FCONTROL, 'X', kCmdCut},
-        {FVIRTKEY | FCONTROL, 'C', kCmdCopy},
-        {FVIRTKEY | FCONTROL, 'V', kCmdPaste},
-        {FVIRTKEY | FCONTROL, 'A', kCmdSelectAll},
-        {FVIRTKEY | FCONTROL, 'D', kCmdFillDown},
-        {FVIRTKEY | FCONTROL, 'R', kCmdFillRight},
-        {FVIRTKEY | FCONTROL | FSHIFT, 'D', kCmdDuplicateRow},
-        {FVIRTKEY | FCONTROL, VK_OEM_PLUS, kCmdInsertRowAbove},
-        {FVIRTKEY | FCONTROL, VK_OEM_MINUS, kCmdDeleteRows},
-        {FVIRTKEY | FCONTROL | FSHIFT, VK_OEM_PLUS, kCmdInsertColumnLeft},
-        {FVIRTKEY | FCONTROL | FSHIFT, VK_OEM_MINUS, kCmdDeleteColumns},
-        {FVIRTKEY | FCONTROL, VK_ADD, kCmdInsertRowAbove},
-    }};
-    HACCEL table = CreateAcceleratorTableW(const_cast<ACCEL*>(accelerators.data()),
-                                           static_cast<int>(accelerators.size()));
+    HACCEL table = LoadAcceleratorsW(instance, MAKEINTRESOURCEW(IDR_ACCELERATORS));
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
@@ -150,10 +124,12 @@ int App::Run(HINSTANCE instance, int showCommand) {
         if (!editShortcut && TranslateAcceleratorW(frame, table, &message)) {
             continue;
         }
+        if (findBar.PreTranslate(message)) {
+            continue;
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
-    DestroyAcceleratorTable(table);
     return static_cast<int>(message.wParam);
 }
 

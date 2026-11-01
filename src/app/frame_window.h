@@ -22,7 +22,6 @@ protected:
 
 private:
     bool OnCreate(HINSTANCE instance);
-    void CreateMenus();
     void UpdateMenu(HMENU menu);
 
     App& app_;

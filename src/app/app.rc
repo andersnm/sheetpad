@@ -1,2 +1,134 @@
+#include <windows.h>
+
+#include "resource.h"
+
 1 24 "app.manifest"
-101 ICON "app.ico"
+IDI_APP ICON "app.ico"
+
+IDR_MAINMENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "&New\tCtrl+N", IDM_FILE_NEW
+        MENUITEM "&Open...\tCtrl+O", IDM_FILE_OPEN
+        MENUITEM "&Save\tCtrl+S", IDM_FILE_SAVE
+        MENUITEM "Save &As...\tCtrl+Shift+S", IDM_FILE_SAVEAS
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tAlt+F4", IDM_FILE_EXIT
+    END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "&Undo\tCtrl+Z", IDM_EDIT_UNDO
+        MENUITEM "&Redo\tCtrl+Y / Ctrl+Shift+Z", IDM_EDIT_REDO
+        MENUITEM SEPARATOR
+        MENUITEM "Cu&t\tCtrl+X", IDM_EDIT_CUT
+        MENUITEM "&Copy\tCtrl+C", IDM_EDIT_COPY
+        MENUITEM "&Paste\tCtrl+V", IDM_EDIT_PASTE
+        MENUITEM "&Delete\tDel", IDM_EDIT_DELETE
+        MENUITEM SEPARATOR
+        MENUITEM "Fill D&own\tCtrl+D", IDM_EDIT_FILLDOWN
+        MENUITEM "Fill Ri&ght\tCtrl+R", IDM_EDIT_FILLRIGHT
+        MENUITEM SEPARATOR
+        MENUITEM "&Find...\tCtrl+F", IDM_EDIT_FIND
+        MENUITEM "Find &Next\tF3", IDM_EDIT_FINDNEXT
+        MENUITEM "Find Pre&vious\tShift+F3", IDM_EDIT_FINDPREV
+        MENUITEM SEPARATOR
+        MENUITEM "Select &All\tCtrl+A", IDM_EDIT_SELECTALL
+    END
+    POPUP "&Table"
+    BEGIN
+        MENUITEM "Insert Row &Above\tCtrl+Plus", IDM_TABLE_INSERTROWABOVE
+        MENUITEM "Insert Row &Below", IDM_TABLE_INSERTROWBELOW
+        MENUITEM "&Delete Row(s)\tCtrl+Minus", IDM_TABLE_DELETEROWS
+        MENUITEM "D&uplicate Row\tCtrl+Shift+D", IDM_TABLE_DUPLICATEROW
+        MENUITEM SEPARATOR
+        MENUITEM "Insert Column &Left\tCtrl+Shift+Plus", IDM_TABLE_INSERTCOLUMNLEFT
+        MENUITEM "Insert Column &Right", IDM_TABLE_INSERTCOLUMNRIGHT
+        MENUITEM "Delete &Column(s)\tCtrl+Shift+Minus", IDM_TABLE_DELETECOLUMNS
+    END
+    POPUP "&Data"
+    BEGIN
+        MENUITEM "First Row Is &Header", IDM_DATA_HEADERROW
+        MENUITEM SEPARATOR
+        MENUITEM "&Filter Column...\tAlt+Down", IDM_DATA_FILTERCOLUMN
+        MENUITEM "&Clear All Filters", IDM_DATA_CLEARFILTERS
+        MENUITEM SEPARATOR
+        MENUITEM "Sort &Ascending", IDM_DATA_SORTASC
+        MENUITEM "Sort &Descending", IDM_DATA_SORTDESC
+        MENUITEM "Add Ascending Sort &Level", IDM_DATA_SORTADDASC
+        MENUITEM "Add Descending Sort L&evel", IDM_DATA_SORTADDDESC
+        MENUITEM "Clear &Sort", IDM_DATA_CLEARSORT
+        MENUITEM "Apply Sort to &Data", IDM_DATA_APPLYSORT
+        MENUITEM SEPARATOR
+        MENUITEM "&Reapply Filter and Sort", IDM_DATA_REAPPLY
+    END
+    POPUP "&View"
+    BEGIN
+        MENUITEM "Formula &Inspector\tCtrl+Shift+I", IDM_VIEW_INSPECTOR
+    END
+END
+
+IDR_ACCELERATORS ACCELERATORS
+BEGIN
+    "I", IDM_VIEW_INSPECTOR, VIRTKEY, CONTROL, SHIFT
+    "F", IDM_EDIT_FIND, VIRTKEY, CONTROL
+    VK_F3, IDM_EDIT_FINDNEXT, VIRTKEY
+    VK_F3, IDM_EDIT_FINDPREV, VIRTKEY, SHIFT
+    "N", IDM_FILE_NEW, VIRTKEY, CONTROL
+    "O", IDM_FILE_OPEN, VIRTKEY, CONTROL
+    "S", IDM_FILE_SAVE, VIRTKEY, CONTROL
+    "S", IDM_FILE_SAVEAS, VIRTKEY, CONTROL, SHIFT
+    "Z", IDM_EDIT_UNDO, VIRTKEY, CONTROL
+    "Y", IDM_EDIT_REDO, VIRTKEY, CONTROL
+    "Z", IDM_EDIT_REDO, VIRTKEY, CONTROL, SHIFT
+    "X", IDM_EDIT_CUT, VIRTKEY, CONTROL
+    "C", IDM_EDIT_COPY, VIRTKEY, CONTROL
+    "V", IDM_EDIT_PASTE, VIRTKEY, CONTROL
+    "A", IDM_EDIT_SELECTALL, VIRTKEY, CONTROL
+    "D", IDM_EDIT_FILLDOWN, VIRTKEY, CONTROL
+    "R", IDM_EDIT_FILLRIGHT, VIRTKEY, CONTROL
+    "D", IDM_TABLE_DUPLICATEROW, VIRTKEY, CONTROL, SHIFT
+    VK_OEM_PLUS, IDM_TABLE_INSERTROWABOVE, VIRTKEY, CONTROL
+    VK_OEM_MINUS, IDM_TABLE_DELETEROWS, VIRTKEY, CONTROL
+    VK_OEM_PLUS, IDM_TABLE_INSERTCOLUMNLEFT, VIRTKEY, CONTROL, SHIFT
+    VK_OEM_MINUS, IDM_TABLE_DELETECOLUMNS, VIRTKEY, CONTROL, SHIFT
+    VK_ADD, IDM_TABLE_INSERTROWABOVE, VIRTKEY, CONTROL
+END
+
+// The find bar is a child dialog of the frame. The code lays the controls out in pixels at the current DPI; the
+// sizes here only serve the resource editor. Mnemonics avoid the menu bar's F, E, T, D and V.
+IDD_FIND DIALOGEX 0, 0, 440, 16
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT "Find:", IDC_FIND_LABEL, 4, 2, 22, 12, SS_CENTERIMAGE
+    CONTROL "", IDC_FIND_EDIT, "Edit", ES_AUTOHSCROLL | WS_TABSTOP, 28, 1, 120, 14, WS_EX_CLIENTEDGE
+    PUSHBUTTON "&Previous", IDC_FIND_PREV, 152, 1, 36, 14
+    PUSHBUTTON "&Next", IDC_FIND_NEXT, 192, 1, 36, 14
+    AUTOCHECKBOX "&Match case", IDC_FIND_CASE, 232, 1, 56, 14
+    AUTOCHECKBOX "&Whole cell", IDC_FIND_WHOLE, 292, 1, 54, 14
+    AUTOCHECKBOX "&Regex", IDC_FIND_REGEX, 350, 1, 38, 14
+    AUTOCHECKBOX "This c&olumn", IDC_FIND_COLUMN, 392, 1, 60, 14
+    LTEXT "", IDC_FIND_RESULT, 456, 2, 60, 12, SS_CENTERIMAGE | SS_ENDELLIPSIS
+    PUSHBUTTON "Close", IDC_FIND_CLOSE, 520, 1, 36, 14
+END
+
+STRINGTABLE
+BEGIN
+    IDS_APP_TITLE "Sheetpad"
+    IDS_UNTITLED "Untitled"
+    IDS_ERR_REGISTER_CLASS "The application window could not be registered."
+    IDS_ERR_CREATE_WINDOW "The application window could not be created."
+    IDS_ERR_READ_FILE "The file could not be read."
+    IDS_ERR_UNTERMINATED_QUOTE "The file ends inside a quoted field, so it is not valid CSV."
+    IDS_WARN_FORMULA_FILE "The formula file next to this CSV could not be read, so the formulas were not loaded. It will be left untouched unless you save formulas of your own."
+    IDS_ERR_SAVE_FILE "The file could not be saved."
+    IDS_ERR_SAVE_FORMULAS "The CSV was saved, but the formula file could not be written."
+    IDS_CONFIRM_SAVE "Do you want to save changes to %1?"
+    IDS_FILE_FILTER "CSV and tab-separated files (*.csv;*.tsv)|*.csv;*.tsv|All files (*.*)|*.*|"
+    IDS_FIND_INVALID "Invalid pattern"
+    IDS_FIND_NOT_FOUND "Not found"
+    IDS_STATUS_MODIFIED "Modified"
+    IDS_STATUS_SAVED "Saved"
+    IDS_STATUS_FORMULA "Formula: "
+END
