@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "app.h"
+#include "html_table.h"
 #include "text_encoding.h"
 
 using namespace sheetpad;
@@ -159,41 +160,69 @@ void App::PasteClipboard() {
         return;
     }
     const bool internal = copySequence != 0 && copySequence == GetClipboardSequenceNumber();
+
+    // Browsers and Word often flatten a copied table to one cell per line in the text format, so the HTML format
+    // wins. Our own copies keep their formulas in the text format, so those use it.
+    Table table;
+    if (!internal) {
+        static const UINT htmlFormat = RegisterClipboardFormatW(L"HTML Format");
+        if (htmlFormat != 0) {
+            if (HANDLE handle = GetClipboardData(htmlFormat)) {
+                if (const auto* bytes = static_cast<const char*>(GlobalLock(handle))) {
+                    const std::string_view payload(bytes, GlobalSize(handle));
+                    ParseHtml(ExtractClipboardHtmlFragment(payload), table);
+                    GlobalUnlock(handle);
+                }
+            }
+        }
+    }
+
     std::wstring wide;
-    if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
-        if (const auto* text = static_cast<const wchar_t*>(GlobalLock(handle))) {
-            wide = text;
-            GlobalUnlock(handle);
+    if (table.empty()) {
+        if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
+            if (const auto* text = static_cast<const wchar_t*>(GlobalLock(handle))) {
+                wide = text;
+                GlobalUnlock(handle);
+            }
         }
     }
     CloseClipboard();
-    if (wide.empty()) {
-        return;
-    }
 
-    const std::string utf8 = WideToUtf8(wide);
-    const ParsedCsv parsed = ParseCsv(utf8, DetectPasteDelimiter(utf8));
-    if (parsed.rows.empty()) {
+    std::size_t columnCount = 0;
+    if (table.empty()) {
+        if (wide.empty()) {
+            return;
+        }
+        const std::string utf8 = WideToUtf8(wide);
+        ParsedCsv parsed = ParseCsv(utf8, DetectPasteDelimiter(utf8));
+        table = std::move(parsed.rows);
+        columnCount = parsed.columnCount;
+    } else {
+        for (const Row& row : table) {
+            columnCount = std::max(columnCount, row.size());
+        }
+    }
+    if (table.empty()) {
         return;
     }
 
     const CellRange sel = Selection();
-    const bool singleValue = parsed.rows.size() == 1 && parsed.rows[0].size() == 1;
+    const bool singleValue = table.size() == 1 && table[0].size() == 1;
     const bool fill = singleValue && (sel.bottom > sel.top || sel.right > sel.left);
     const bool shifts = internal && !copyMoving;
     std::vector<CellEdit> edits;
     if (fill) {
         for (int row = sel.top; row <= sel.bottom; ++row) {
             for (int col = sel.left; col <= sel.right; ++col) {
-                edits.push_back(PastedCell(DocRowOf(row), static_cast<std::size_t>(col), parsed.rows[0][0], shifts,
+                edits.push_back(PastedCell(DocRowOf(row), static_cast<std::size_t>(col), table[0][0], shifts,
                                            copyOrigin));
             }
         }
     } else {
-        for (std::size_t r = 0; r < parsed.rows.size(); ++r) {
-            for (std::size_t c = 0; c < parsed.rows[r].size(); ++c) {
+        for (std::size_t r = 0; r < table.size(); ++r) {
+            for (std::size_t c = 0; c < table[r].size(); ++c) {
                 edits.push_back(PastedCell(DocRowOf(sel.top + static_cast<int>(r)),
-                                           static_cast<std::size_t>(sel.left) + c, parsed.rows[r][c], shifts,
+                                           static_cast<std::size_t>(sel.left) + c, table[r][c], shifts,
                                            copyOrigin));
             }
         }
@@ -201,8 +230,8 @@ void App::PasteClipboard() {
     doc.ApplyEdits(std::move(edits));
     AfterDocumentChanged();
     if (!fill) {
-        const Pos end{sel.top + static_cast<int>(parsed.rows.size()) - 1,
-                      sel.left + static_cast<int>(parsed.columnCount) - 1};
+        const Pos end{sel.top + static_cast<int>(table.size()) - 1,
+                      sel.left + static_cast<int>(columnCount) - 1};
         SetSelection({sel.top, sel.left}, end);
     }
 }

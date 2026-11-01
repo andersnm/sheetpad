@@ -7,6 +7,7 @@
 #include "document.h"
 #include "formula.h"
 #include "formula_store.h"
+#include "html_table.h"
 #include "view.h"
 
 using namespace sheetpad;
@@ -710,9 +711,119 @@ void TestInspector() {
     CHECK(doc.Revision() != before);
 }
 
+void TestHtmlTable() {
+    Table t;
+    CHECK(!ParseHtml("<table></table>", t));
+    CHECK(!ParseHtml("", t));
+
+    // Text without tables becomes one row per line, split at <br> and block elements.
+    CHECK(ParseHtml("<p>one</p><div>two <b>bold</b><br>three</div>four", t));
+    CHECK(t == (Table{{"one"}, {"two bold"}, {"three"}, {"four"}}));
+
+    // A full page: head content is ignored, text and several tables come out in document order.
+    CHECK(ParseHtml("<html><head><title>T</title><style>p{}</style></head><body>Intro"
+                    "<table><tr><td>1</td><td>2</td></tr></table>between"
+                    "<table><tr><td>3</td></tr><tr><td>4</td></tr></table><p>end</p></body></html>",
+                    t));
+    CHECK(t == (Table{{"Intro"}, {"1", "2"}, {"between"}, {"3"}, {"4"}, {"end"}}));
+
+    // Spans do not leak from one table into the next.
+    CHECK(ParseHtml("<table><tr><td rowspan=3>a</td></tr></table><table><tr><td>b</td></tr></table>", t));
+    CHECK(t == (Table{{"a"}, {"b"}}));
+
+    // Basic table, header cells, case-insensitive tags, entities, whitespace collapsing.
+    CHECK(ParseHtml("<TABLE>\n <thead><tr><TH>Name</TH><th>Qty</th></tr></thead>\n"
+                         "<tbody><tr><td>  Tom &amp;\n  Jerry </td><td>1&nbsp;000</td></tr></tbody></TABLE>",
+                         t));
+    CHECK(t.size() == 2);
+    CHECK(t[0] == (Row{"Name", "Qty"}));
+    CHECK(t[1] == (Row{"Tom & Jerry", "1 000"}));
+
+    // Numeric entities, unknown entities left alone, <br> and block ends become newlines.
+    CHECK(ParseHtml("<table><tr><td>&#65;&#x42;&euro;&bogus;</td><td>a<br>b<br/>c</td>"
+                         "<td><p>one</p><p>two</p></td></tr></table>",
+                         t));
+    CHECK(t[0][0] == "AB\xE2\x82\xAC&bogus;");
+    CHECK(t[0][1] == "a\nb\nc");
+    CHECK(t[0][2] == "one\ntwo");
+
+    // Missing end tags, nested inline tags, comments, scripts, attributes containing '>'.
+    CHECK(ParseHtml("<table><tr><td>a<td><b>b</b> <i>c</i><tr><td title=\"x>y\">d<!-- hidden -->"
+                         "<script>var s = '</td>';</script></table>",
+                         t));
+    CHECK(t.size() == 2);
+    CHECK(t[0] == (Row{"a", "b c"}));
+    CHECK(t[1] == (Row{"d"}));
+
+    // Rows built from flex/grid containers (div/span layouts) become rows of cells; images are not cells.
+    CHECK(ParseHtml("<h2>Largest</h2><p>sub</p><div class=\"space-y-3\">"
+                    "<a class=\"flex items-center\" href=\"/in\"><span>1</span><img alt=\"Flag\" src=\"x\"/>"
+                    "<span>India</span><span>New Delhi</span><span>1.46B</span></a>"
+                    "<a class=\"flex items-center\" href=\"/us\"><span>3</span><img src=\"y\"/>"
+                    "<span>United States</span><span>Washington, D.C.</span><span>341.8M</span></a></div>",
+                    t));
+    CHECK(t == (Table{{"Largest"}, {"sub"}, {"1", "India", "New Delhi", "1.46B"},
+                      {"3", "United States", "Washington, D.C.", "341.8M"}}));
+    CHECK(ParseHtml("<div style=\"display: flex;\"><span>a</span><span>b</span></div>"
+                    "<div style=\"display: flex; flex-direction: column;\"><span>c</span><span>d</span></div>",
+                    t));
+    CHECK(t == (Table{{"a", "b"}, {"cd"}}));
+
+    // The text before a table does not disturb it.
+    CHECK(ParseHtml("<html><body>text<table><tr><td>1</td></tr></table>", t));
+    CHECK(t == (Table{{"text"}, {"1"}}));
+
+    // A nested table is flattened into the cell that contains it.
+    CHECK(ParseHtml("<table><tr><td>outer<table><tr><td>x</td><td>y</td></tr></table></td><td>z</td></tr></table>",
+                    t));
+    CHECK(t.size() == 1 && t[0].size() == 2 && t[0][1] == "z");
+
+    // Spans: blank by default, optionally repeated.
+    const std::string spans =
+        "<table><tr><td colspan=2>wide</td><td rowspan=\"2\">tall</td></tr><tr><td>a</td><td>b</td></tr></table>";
+    CHECK(ParseHtml(spans, t));
+    CHECK(t.size() == 2);
+    CHECK(t[0] == (Row{"wide", "", "tall"}));
+    CHECK(t[1] == (Row{"a", "b", ""}));
+    CHECK(ParseHtml(spans, t, SpanFill::Repeat));
+    CHECK(t[0] == (Row{"wide", "wide", "tall"}));
+    CHECK(t[1] == (Row{"a", "b", "tall"}));
+
+    // A rowspan that sits before other cells pushes them right.
+    CHECK(ParseHtml("<table><tr><td rowspan=2>k</td><td>1</td></tr><tr><td>2</td></tr></table>", t));
+    CHECK(t[1] == (Row{"", "2"}));
+
+    // Absurd spans are clamped instead of exhausting memory.
+    CHECK(ParseHtml("<table><tr><td colspan=999999999 rowspan=999999999>x</td></tr></table>", t));
+    CHECK(t[0].size() == 256);
+
+    // Our own clipboard output round-trips, including through the CF_HTML header.
+    const Table original{{"a", "b<c>"}, {"x & y", ""}};
+    CHECK(ParseHtml(BuildHtmlTable(original), t));
+    CHECK(t == original);
+
+    const std::string fragment = "<table><tr><td>f</td></tr></table>";
+    const std::string payload = "Version:0.9\r\nStartHTML:0000000105\r\nEndHTML:0000000200\r\n"
+                                "StartFragment:0000000140\r\nEndFragment:0000000174\r\n"
+                                "<html><body>\r\n<!--StartFragment-->" +
+                                fragment + "<!--EndFragment-->\r\n</body></html>";
+    const std::size_t start = payload.find("<table>");
+    std::string header = payload;
+    header.replace(header.find("0000000140"), 10, std::string(10 - std::to_string(start).size(), '0') +
+                                                      std::to_string(start));
+    const std::size_t end = start + fragment.size();
+    header.replace(header.find("0000000174"), 10,
+                   std::string(10 - std::to_string(end).size(), '0') + std::to_string(end));
+    CHECK(ExtractClipboardHtmlFragment(header) == fragment);
+    CHECK(ExtractClipboardHtmlFragment("<table></table>") == "<table></table>");
+    CHECK(ExtractClipboardHtmlFragment("StartFragment:0000000900\r\nEndFragment:0000000999\r\nshort") ==
+          "StartFragment:0000000900\r\nEndFragment:0000000999\r\nshort");
+}
+
 }  // namespace
 
 int main() {
+    TestHtmlTable();
     TestParsing();
     TestRoundTrip();
     TestPasteDelimiter();

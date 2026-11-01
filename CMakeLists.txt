@@ -11,6 +11,7 @@ add_library(sheetpad_core STATIC
     src/core/document.cpp
     src/core/formula.cpp
     src/core/formula_store.cpp
+    src/core/html_table.cpp
     src/core/view.cpp
 )
 target_compile_features(sheetpad_core PUBLIC cxx_std_20)
