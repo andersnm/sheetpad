@@ -396,6 +396,11 @@ void RowView::ColumnsInserted(std::size_t at, std::size_t count) {
         moved.emplace(column >= at ? column + count : column, std::move(filter));
     }
     filters = std::move(moved);
+    std::map<std::size_t, int> widths;
+    for (const auto& [column, width] : columnWidths) {
+        widths.emplace(column >= at ? column + count : column, width);
+    }
+    columnWidths = std::move(widths);
     for (SortLevel& level : sorts) {
         if (level.column >= at) {
             level.column += count;
@@ -413,6 +418,14 @@ void RowView::ColumnsDeleted(std::size_t at, std::size_t count) {
         moved.emplace(column >= at + count ? column - count : column, std::move(filter));
     }
     filters = std::move(moved);
+    std::map<std::size_t, int> widths;
+    for (const auto& [column, width] : columnWidths) {
+        if (column >= at && column < at + count) {
+            continue;
+        }
+        widths.emplace(column >= at + count ? column - count : column, width);
+    }
+    columnWidths = std::move(widths);
     std::vector<SortLevel> kept;
     for (SortLevel level : sorts) {
         if (level.column >= at && level.column < at + count) {

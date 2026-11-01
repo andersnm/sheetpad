@@ -66,16 +66,91 @@ void GridWindow::Wheel(int delta, bool horizontal) {
 
 // ---------------------------------------------------------------- mouse
 
+int GridWindow::ColAtX(int x) const {
+    const int last = app_.GridCols() - 1;
+    int col = firstCol_;
+    int left = app_.m.rowNumberWidth;
+    if (x >= left) {
+        while (col < last && x >= left + ColWidth(col)) {
+            left += ColWidth(col++);
+        }
+    } else {
+        while (col > 0 && x < left) {
+            left -= ColWidth(--col);
+        }
+    }
+    return col;
+}
+
 Pos GridWindow::HitCell(int x, int y) const {
     const Metrics& m = app_.m;
-    return {std::clamp(firstRow_ + FloorDiv(y - m.headerHeight, m.rowHeight), 0, app_.GridRows() - 1),
-            std::clamp(firstCol_ + FloorDiv(x - m.rowNumberWidth, m.columnWidth), 0, app_.GridCols() - 1)};
+    return {std::clamp(firstRow_ + FloorDiv(y - m.headerHeight, m.rowHeight), 0, app_.GridRows() - 1), ColAtX(x)};
+}
+
+int GridWindow::ResizeHandleAt(int x, int y) const {
+    const Metrics& m = app_.m;
+    if (y < 0 || y >= m.headerHeight || x < m.rowNumberWidth) {
+        return -1;
+    }
+    const int dataCols = static_cast<int>(app_.doc.ColumnCount());
+    const int slop = app_.Scale(4);
+    const int col = ColAtX(x);
+    if (col < dataCols && ColLeft(col) + ColWidth(col) - x <= slop) {
+        return col;
+    }
+    if (col > firstCol_ && col - 1 < dataCols && x - ColLeft(col) <= slop) {
+        return col - 1;
+    }
+    return -1;
+}
+
+bool GridWindow::StoreColumnWidth(int col, int pixels) {
+    const int clamped = std::clamp(pixels, app_.Scale(kMinColumnWidth), app_.Scale(kMaxColumnWidth));
+    const int logical = MulDiv(clamped, 96, app_.m.dpi);
+    auto& widths = app_.view.columnWidths;
+    const std::size_t key = static_cast<std::size_t>(col);
+    const auto it = widths.find(key);
+    const int current = it == widths.end() ? kDefaultColumnWidth : it->second;
+    if (logical == current) {
+        return false;
+    }
+    if (logical == kDefaultColumnWidth) {
+        widths.erase(key);
+    } else {
+        widths[key] = logical;
+    }
+    app_.viewDirty = true;
+    return true;
+}
+
+void GridWindow::SetColumnWidth(int col, int pixels) {
+    if (StoreColumnWidth(col, pixels)) {
+        UpdateScrollbars();
+        Redraw();
+    }
 }
 
 void GridWindow::MouseDown(int x, int y, bool doubleClick) {
     const Metrics& m = app_.m;
     editor.Commit();
     SetFocus(*this);
+    const int resizeCol = ResizeHandleAt(x, y);
+    if (resizeCol >= 0) {
+        if (doubleClick) {
+            // Fit to content, or back to the default when already fitted. Inside a multi-column selection the
+            // clicked column decides and the action applies to every selected column.
+            const CellRange sel = app_.Selection();
+            const bool multi = sel.left < sel.right && resizeCol >= sel.left && resizeCol <= sel.right;
+            AutofitColumns(multi ? sel.left : resizeCol, multi ? sel.right : resizeCol, resizeCol);
+            return;
+        }
+        resizeCol_ = resizeCol;
+        resizeOriginX_ = x;
+        resizeStartWidth_ = ColWidth(resizeCol);
+        dragMode_ = DragMode::ResizeColumn;
+        SetCapture(*this);
+        return;
+    }
     const int lastRow = app_.DataRows() - 1;
     const int lastCol = static_cast<int>(app_.doc.ColumnCount()) - 1;
     const Pos hit = HitCell(x, y);
@@ -111,6 +186,10 @@ void GridWindow::MouseDown(int x, int y, bool doubleClick) {
 
 void GridWindow::MouseMoved(int x, int y) {
     if (dragMode_ == DragMode::None) {
+        return;
+    }
+    if (dragMode_ == DragMode::ResizeColumn) {
+        SetColumnWidth(resizeCol_, resizeStartWidth_ + x - resizeOriginX_);
         return;
     }
     const int lastRow = app_.DataRows() - 1;
@@ -341,9 +420,23 @@ LRESULT GridWindow::WindowProc(UINT message, WPARAM wParam, LPARAM lParam) {
         MouseMoved(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
     case WM_LBUTTONUP:
+        if (dragMode_ == DragMode::ResizeColumn) {
+            app_.UpdateTitle();
+        }
         dragMode_ = DragMode::None;
         ReleaseCapture();
         return 0;
+    case WM_SETCURSOR:
+        if (LOWORD(lParam) == HTCLIENT) {
+            POINT point{};
+            GetCursorPos(&point);
+            ScreenToClient(*this, &point);
+            if (dragMode_ == DragMode::ResizeColumn || ResizeHandleAt(point.x, point.y) >= 0) {
+                SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+                return TRUE;
+            }
+        }
+        break;
     case WM_CAPTURECHANGED:
         dragMode_ = DragMode::None;
         return 0;

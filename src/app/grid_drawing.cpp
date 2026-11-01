@@ -13,6 +13,8 @@ namespace app {
 namespace {
 
 constexpr std::size_t kMaxDisplayBytes = 1024;
+// Autofit measures at most this many rows, so that it stays instant on very large files.
+constexpr int kAutofitMaxRows = 5000;
 
 COLORREF Blend(COLORREF foreground, COLORREF background, int foregroundPercent) {
     const auto mix = [&](int f, int b) { return (f * foregroundPercent + b * (100 - foregroundPercent)) / 100; };
@@ -34,11 +36,8 @@ void DrawTriangle(HDC dc, int cx, int cy, int half, bool up, COLORREF color) {
     DeleteObject(brush);
 }
 
-}  // namespace
-
-// ---------------------------------------------------------------- painting
-
-void GridWindow::DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) {
+// The text as painted in a cell: capped in length, with line breaks shown as pilcrows.
+std::wstring DisplayText(std::string_view text) {
     if (text.size() > kMaxDisplayBytes) {
         std::size_t cut = kMaxDisplayBytes;
         while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
@@ -46,7 +45,7 @@ void GridWindow::DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) 
         }
         text = text.substr(0, cut);
     }
-    std::wstring wide = Utf8ToWide(text);
+    const std::wstring wide = Utf8ToWide(text);
     std::wstring shown;
     shown.reserve(wide.size());
     for (std::size_t i = 0; i < wide.size(); ++i) {
@@ -55,16 +54,80 @@ void GridWindow::DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) 
         }
         shown.push_back(wide[i] == L'\r' || wide[i] == L'\n' ? L'\u00B6' : wide[i]);
     }
+    return shown;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------- painting
+
+void GridWindow::DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) {
+    const std::wstring shown = DisplayText(text);
     rect.left += app_.m.padding;
     rect.right -= app_.m.padding;
     DrawTextW(dc, shown.c_str(), static_cast<int>(shown.size()), &rect,
               flags | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
 }
 
+int GridWindow::FitWidth(HDC dc, int col, int rows) const {
+    const Metrics& m = app_.m;
+    // The header must fit the label, the filter button and the sort arrow beside it.
+    const std::wstring label = ColumnName(col);
+    SIZE size{};
+    GetTextExtentPoint32W(dc, label.c_str(), static_cast<int>(label.size()), &size);
+    int width = size.cx + app_.Scale(20) + app_.Scale(12) + 2 * m.padding;
+    for (int row = 0; row < rows; ++row) {
+        const std::string& value = app_.doc.Cell(app_.DocRowOf(row), static_cast<std::size_t>(col));
+        if (value.empty()) {
+            continue;
+        }
+        const std::wstring shown = DisplayText(value);
+        GetTextExtentPoint32W(dc, shown.c_str(), static_cast<int>(shown.size()), &size);
+        width = std::max(width, static_cast<int>(size.cx) + 2 * m.padding + 1);
+    }
+    return width;
+}
+
+void GridWindow::AutofitColumns(int left, int right, int toggleCol) {
+    const int lastData = static_cast<int>(app_.doc.ColumnCount()) - 1;
+    left = std::max(left, 0);
+    right = std::min(right, lastData);
+    if (left > right) {
+        return;
+    }
+    editor.Commit();
+
+    HDC dc = GetDC(*this);
+    HGDIOBJ oldFont = SelectObject(dc, app_.font);
+    const int rows = std::min(app_.DataRows(), kAutofitMaxRows);
+
+    // Toggle: a column that is not at its fit width is fitted; one that already is goes back to the default.
+    bool reset = false;
+    if (toggleCol >= 0 && toggleCol <= lastData) {
+        const int fit = std::clamp(FitWidth(dc, toggleCol, rows), app_.Scale(kMinColumnWidth),
+                                   app_.Scale(kMaxColumnWidth));
+        reset = MulDiv(fit, 96, app_.m.dpi) == MulDiv(ColWidth(toggleCol), 96, app_.m.dpi);
+    }
+
+    bool changed = false;
+    for (int col = left; col <= right; ++col) {
+        changed |= StoreColumnWidth(col, reset ? app_.m.columnWidth : FitWidth(dc, col, rows));
+    }
+    SelectObject(dc, oldFont);
+    ReleaseDC(*this, dc);
+
+    if (changed) {
+        UpdateScrollbars();
+        Redraw();
+        app_.UpdateTitle();
+    }
+}
+
 RECT GridWindow::FilterButtonRect(int col) const {
     const Metrics& m = app_.m;
-    const int x = m.rowNumberWidth + (col - firstCol_) * m.columnWidth;
-    return {x + m.columnWidth - app_.Scale(20) - 1, 1, x + m.columnWidth - 1, m.headerHeight - 1};
+    const int x = ColLeft(col);
+    const int width = ColWidth(col);
+    return {x + width - app_.Scale(20) - 1, 1, x + width - 1, m.headerHeight - 1};
 }
 
 void GridWindow::DrawGrid(HDC dc, const RECT& client) {
@@ -97,7 +160,7 @@ void GridWindow::DrawGrid(HDC dc, const RECT& client) {
     const int right = static_cast<int>(client.right);
     const int gridBottom = static_cast<int>(client.bottom);
     const CellRange sel = app_.Selection();
-    const int lastCol = std::min(app_.GridCols() - 1, firstCol_ + (right - m.rowNumberWidth) / m.columnWidth + 1);
+    const int lastCol = std::min(app_.GridCols() - 1, firstCol_ + VisibleCols(client));
     const int lastRow = std::min(app_.GridRows() - 1, firstRow_ + (gridBottom - m.headerHeight) / m.rowHeight + 1);
     const int dataRows = app_.DataRows();
     const int dataCols = static_cast<int>(doc.ColumnCount());
@@ -163,8 +226,8 @@ void GridWindow::DrawGrid(HDC dc, const RECT& client) {
     RestoreDC(dc, -1);
 
     for (int col = firstCol_; col <= lastCol; ++col) {
-        const int x = m.rowNumberWidth + (col - firstCol_) * m.columnWidth;
-        const RECT header{x, 0, x + m.columnWidth, m.headerHeight};
+        const int x = ColLeft(col);
+        const RECT header{x, 0, x + ColWidth(col), m.headerHeight};
         FillRect(dc, &header, col >= sel.left && col <= sel.right ? headerSelectedBrush : headerBrush);
         const RECT edge{header.right - 1, 0, header.right, header.bottom};
         FillRect(dc, &edge, gridBrush);

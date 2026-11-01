@@ -38,7 +38,7 @@ void App::CreateFonts(HWND window) {
     m.rowHeight = text.tmHeight + Scale(10);
     m.headerHeight = m.rowHeight;
     m.rowNumberWidth = Scale(56);
-    m.columnWidth = Scale(140);
+    m.columnWidth = Scale(kDefaultColumnWidth);
 }
 
 void App::UpdateTitle() {

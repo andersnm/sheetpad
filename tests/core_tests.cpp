@@ -626,6 +626,21 @@ void TestFilterStore() {
     headerOnly.headerRows = 1;
     CHECK(BuildFormulaJson(doc, &headerOnly).find("\"headerRow\": true") != std::string::npos);
     CHECK(!ApplyFormulaJson(loaded, "{\"filters\": {\"B\": {\"in\": [1]}}}", &restored));
+
+    // Column widths round-trip, follow column inserts/deletes, and bad entries are ignored.
+    RowView widths;
+    widths.columnWidths = {{1, 220}, {3, 90}};
+    const std::string widthJson = BuildFormulaJson(doc, &widths);
+    CHECK(widthJson.find("\"columnWidths\"") != std::string::npos);
+    RowView widthsBack;
+    CHECK(ApplyFormulaJson(loaded, widthJson, &widthsBack));
+    CHECK((widthsBack.columnWidths == std::map<std::size_t, int>{{1, 220}, {3, 90}}));
+    widthsBack.ColumnsInserted(2, 1);
+    CHECK((widthsBack.columnWidths == std::map<std::size_t, int>{{1, 220}, {4, 90}}));
+    widthsBack.ColumnsDeleted(1, 1);
+    CHECK((widthsBack.columnWidths == std::map<std::size_t, int>{{3, 90}}));
+    CHECK(ApplyFormulaJson(loaded, "{\"columnWidths\": {\"A\": \"wide\", \"B\": 0, \"C\": 75.4}}", &widthsBack));
+    CHECK((widthsBack.columnWidths == std::map<std::size_t, int>{{2, 75}}));
 }
 
 void TestMatcher() {

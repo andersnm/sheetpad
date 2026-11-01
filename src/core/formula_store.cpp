@@ -1,6 +1,7 @@
 #include "formula_store.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <string_view>
@@ -78,6 +79,7 @@ public:
         std::map<std::string, std::string> cells;
         std::map<std::string, std::string> columns;
         std::vector<std::pair<std::string, ColumnFilter>> filters;
+        std::vector<std::pair<std::string, int>> widths;
         bool headerRow = false;
     };
 
@@ -101,6 +103,10 @@ public:
                 }
             } else if (key == "filters") {
                 if (!ReadFilters(parsed.filters)) {
+                    return false;
+                }
+            } else if (key == "columnWidths") {
+                if (!ReadWidths(parsed.widths)) {
                     return false;
                 }
             } else if (key == "headerRow") {
@@ -127,6 +133,42 @@ public:
     }
 
 private:
+    // Reads {"A": 120, ...}; entries whose value is not a number are ignored.
+    bool ReadWidths(std::vector<std::pair<std::string, int>>& out) {
+        if (!Expect('{')) {
+            return false;
+        }
+        SkipSpace();
+        if (Peek() == '}') {
+            ++pos_;
+            return true;
+        }
+        while (true) {
+            std::string column;
+            if (!ReadString(column) || !Expect(':')) {
+                return false;
+            }
+            SkipSpace();
+            const std::size_t start = pos_;
+            if (!SkipValue(0)) {
+                return false;
+            }
+            const std::string token = s_.substr(start, pos_ - start);
+            char* end = nullptr;
+            const double value = std::strtod(token.c_str(), &end);
+            if (!token.empty() && token.front() != '"' && end == token.c_str() + token.size() && value >= 1 &&
+                value <= 100000) {
+                out.emplace_back(std::move(column), static_cast<int>(value + 0.5));
+            }
+            SkipSpace();
+            if (Peek() == ',') {
+                ++pos_;
+                continue;
+            }
+            return Expect('}');
+        }
+    }
+
     bool ReadStringArray(std::set<std::string>& out) {
         if (!Expect('[')) {
             return false;
@@ -451,6 +493,18 @@ std::string BuildFormulaJson(const Document& doc, const RowView* view) {
         out += "  }";
         sections.push_back(std::move(out));
     }
+    if (view && !view->columnWidths.empty()) {
+        std::string out = "  \"columnWidths\": {\n";
+        std::size_t remaining = view->columnWidths.size();
+        for (const auto& [column, width] : view->columnWidths) {
+            out += "    ";
+            AppendEscaped(out, ColumnLabel(column));
+            out += ": " + std::to_string(width);
+            out += --remaining > 0 ? ",\n" : "\n";
+        }
+        out += "  }";
+        sections.push_back(std::move(out));
+    }
     if (view && view->headerRows > 0) {
         sections.push_back("  \"headerRow\": true");
     }
@@ -494,6 +548,14 @@ bool ApplyFormulaJson(Document& doc, const std::string& json, RowView* view) {
             }
         }
         view->headerRows = parsed.headerRow ? 1 : 0;
+        view->columnWidths.clear();
+        for (const auto& [label, width] : parsed.widths) {
+            std::size_t row = 0;
+            std::size_t col = 0;
+            if (ParseCellLabel(label + "1", row, col)) {
+                view->columnWidths[col] = width;
+            }
+        }
     }
     return true;
 }

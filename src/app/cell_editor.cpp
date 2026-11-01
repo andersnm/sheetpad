@@ -53,7 +53,8 @@ void CellEditor::Position() {
     const Metrics& m = app_.m;
     const RECT cell = app_.grid.CellRect(cell_);
     const int inset = 2;
-    MoveWindow(*this, cell.left + inset, cell.top + inset, m.columnWidth - 2 * inset, m.rowHeight - 2 * inset, TRUE);
+    MoveWindow(*this, cell.left + inset, cell.top + inset, (cell.right - cell.left) - 2 * inset,
+               m.rowHeight - 2 * inset, TRUE);
 
     RECT inner{};
     GetClientRect(*this, &inner);

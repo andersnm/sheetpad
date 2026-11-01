@@ -198,6 +198,16 @@ void App::RunCommand(UINT command) {
         }
         break;
     case kCmdFindClose: findBar.Show(false); break;
+    case kCmdAutofit: {
+        // The selection always has an active cell; a lone cell counts as "no columns selected", so fit them all.
+        const CellRange sel = Selection();
+        if (sel.top == sel.bottom && sel.left == sel.right) {
+            grid.AutofitColumns(0, static_cast<int>(doc.ColumnCount()) - 1);
+        } else {
+            grid.AutofitColumns(sel.left, sel.right);
+        }
+        break;
+    }
     case kCmdHeaderRow:
         ChangeView([&] {
             view.headerRows = view.headerRows ? 0 : 1;

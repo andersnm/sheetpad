@@ -45,6 +45,7 @@ BEGIN
         MENUITEM "Insert Column &Left\tCtrl+Shift+Plus", IDM_TABLE_INSERTCOLUMNLEFT
         MENUITEM "Insert Column &Right", IDM_TABLE_INSERTCOLUMNRIGHT
         MENUITEM "Delete &Column(s)\tCtrl+Shift+Minus", IDM_TABLE_DELETECOLUMNS
+        MENUITEM "Auto&fit Column Width", IDM_TABLE_AUTOFIT
     END
     POPUP "&Data"
     BEGIN

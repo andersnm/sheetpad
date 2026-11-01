@@ -72,6 +72,8 @@ public:
     std::vector<SortLevel> sorts;
     // Leading rows that are never filtered or sorted (the CSV header).
     std::size_t headerRows = 0;
+    // Custom column widths in device-independent pixels (96 dpi); columns not listed use the default width.
+    std::map<std::size_t, int> columnWidths;
 
     bool Active() const { return !filters.empty() || !sorts.empty(); }
 

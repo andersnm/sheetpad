@@ -30,6 +30,7 @@ enum Command : UINT {
     kCmdInsertColumnLeft = IDM_TABLE_INSERTCOLUMNLEFT,
     kCmdInsertColumnRight = IDM_TABLE_INSERTCOLUMNRIGHT,
     kCmdDeleteColumns = IDM_TABLE_DELETECOLUMNS,
+    kCmdAutofit = IDM_TABLE_AUTOFIT,
     kCmdFillDown = IDM_EDIT_FILLDOWN,
     kCmdFillRight = IDM_EDIT_FILLRIGHT,
     kCmdFind = IDM_EDIT_FIND,
@@ -70,7 +71,12 @@ struct CellRange {
     int right;
 };
 
-enum class DragMode { None, Cells, Columns, Rows };
+enum class DragMode { None, Cells, Columns, Rows, ResizeColumn };
+
+// Default and limits of column widths, in device-independent pixels (96 dpi).
+constexpr int kDefaultColumnWidth = 140;
+constexpr int kMinColumnWidth = 24;
+constexpr int kMaxColumnWidth = 1600;
 
 struct Pos {
     int row = 0;

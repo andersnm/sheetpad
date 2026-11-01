@@ -46,6 +46,7 @@
 #define IDM_DATA_APPLYSORT 1034
 #define IDM_DATA_REAPPLY 1035
 #define IDM_VIEW_INSPECTOR 1036
+#define IDM_TABLE_AUTOFIT 1037
 
 // Find bar dialog controls.
 #define IDC_FIND_LABEL 3000
