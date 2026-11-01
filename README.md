@@ -10,11 +10,12 @@ Sheetpad is to CSV files what Notepad is to text files.
 ## Features
 
 - Spreadsheet grid
+- Formulas with autocomplete
 - Unlimited undo/redo
-- Cut/copy/paste as TSV and HTML, paste tables into other applications
+- Cut/copy/paste as TSV and HTML
+- Copy-paste table data between applications
 - Range, row and column selection
 - Column filters, sorting, searching
-- Formulas
 - Formula inspector pane
 
 ## Getting started
@@ -23,6 +24,7 @@ Sheetpad is to CSV files what Notepad is to text files.
 - Cells starting with `=` are treated as formulas
 - When editing, press Ctrl+Enter for multi-line cells
 - Press Ctrl+Shift+I to inspect formulas
+- Press Ctrl+Space to bring up autocomplete
 
 ## Supported file formats
 
@@ -92,12 +94,14 @@ stays readable by any tool. Formulas and view settings are stored next to it in
     "A": { "in": ["x", "y"] },
     "B": { "op": ">", "value": "10" }
   },
+  "columnWidths": { "A": 217, "C": 80 },
   "headerRow": true
 }
 ```
 
 - `cells`: formulas by cell address
 - `filters`: saved column filters (value lists or conditions), restored on open
+- `columnWidths`: widths of resized columns in pixels at 96 DPI (scaled on high-DPI displays); columns at the default width are omitted
 - `headerRow`: row 1 is a header and is excluded from filtering and sorting
 
 Sorting is not saved. A malformed sidecar is left untouched.
@@ -127,8 +131,6 @@ cmake -S . -B build-native -G Ninja && cmake --build build-native
 
 Layout:
 - `src/core/`: portable, unit-tested core (CSV, document model, formulas, sidecar, filter/sort view); no Windows headers
-- `src/app/`: the Win32 application: one header and source per window class (`grid_window`, `frame_window`, `find_bar`, `inspector_pane`, `cell_editor`) on top of the `WindowHandle` wrapper, shared `types.h` and `platform.h`, and `App` (`app.h`, `app.cpp`, `app_*.cpp`) which owns them (`main.cpp`, resources, icon)
+- `src/app/`: the Win32 application: one header and source per window class
 - `tests/`: core unit tests and the benchmark
 - `tools/`: `make_icon.py` regenerates `src/app/app.ico`
-- `docs/`: specification, ideas and images; `site/`: GitHub Pages website
-- `packaging/`: installer packaging; `.github/workflows/`: CI
