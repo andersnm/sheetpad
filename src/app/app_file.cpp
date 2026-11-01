@@ -138,13 +138,13 @@ bool App::SaveTo(const std::wstring& targetPath) {
     return true;
 }
 
-bool App::PickPath(bool save, std::wstring& result) {
+bool App::PickPath(bool save, std::wstring& result, UINT filterId) {
     std::array<wchar_t, 32768> buffer{};
     if (save && !path.empty()) {
         wcsncpy(buffer.data(), path.c_str(), buffer.size() - 1);
     }
     // The filter is stored with '|' separators because string table entries cannot contain NULs.
-    std::wstring filter = Res(IDS_FILE_FILTER);
+    std::wstring filter = Res(filterId);
     std::replace(filter.begin(), filter.end(), L'|', L'\0');
     filter.push_back(L'\0');
     OPENFILENAMEW dialog{};
@@ -209,6 +209,46 @@ void App::OpenDocument() {
     if (PickPath(false, target)) {
         LoadFile(target);
     }
+}
+
+void App::ImportFile(bool html) {
+    grid.editor.Commit();
+    std::wstring target;
+    if (!PickPath(false, target, html ? IDS_FILE_FILTER_HTML : IDS_FILE_FILTER)) {
+        return;
+    }
+    std::string bytes;
+    {
+        const WaitCursor wait;
+        if (!ReadFileBytes(target, bytes)) {
+            MessageBoxW(grid, Res(IDS_ERR_READ_FILE).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONERROR);
+            return;
+        }
+    }
+    ImportResult imported;
+    ImportDialog dialog(*this, html ? ImportDialog::Kind::Html : ImportDialog::Kind::Csv,
+                        ImportDialog::Source::File, std::move(bytes));
+    if (!dialog.Run(imported) || !ConfirmDiscard()) {
+        return;
+    }
+
+    ParsedCsv parsed;
+    parsed.rows = std::move(imported.table);
+    parsed.columnCount = imported.columnCount;
+    parsed.delimiter = imported.delimiter;
+    parsed.crlf = imported.crlf;
+    parsed.trailingNewline = imported.trailingNewline;
+    // The result is a new, unsaved document, like File > New with content.
+    doc = Document::FromParsed(std::move(parsed));
+    doc.encoding = imported.encoding;
+    sidecarInvalid = false;
+    view = RowView{};
+    viewDirty = true;
+    path.clear();
+    ResetView();
+    view.Rebuild(doc);
+    viewStale = false;
+    AfterDocumentChanged();
 }
 
 }  // namespace app

@@ -144,7 +144,9 @@ void App::RunCommand(UINT command) {
         case kCmdInsertColumnRight:
         case kCmdDeleteColumns:
         case kCmdFillDown:
-        case kCmdFillRight: return;
+        case kCmdFillRight:
+        case kCmdPasteSpecial:
+        case kCmdPasteHtmlText: return;
         default: editor.Commit(); break;
         }
     }
@@ -164,6 +166,8 @@ void App::RunCommand(UINT command) {
     switch (command) {
     case kCmdNew: NewDocument(); break;
     case kCmdOpen: OpenDocument(); break;
+    case kCmdImportCsv: ImportFile(false); break;
+    case kCmdImportHtml: ImportFile(true); break;
     case kCmdSave: Save(); break;
     case kCmdSaveAs: SaveAs(); break;
     case kCmdExit: SendMessageW(frame, WM_CLOSE, 0, 0); break;
@@ -186,6 +190,8 @@ void App::RunCommand(UINT command) {
         break;
     case kCmdCopy: CopySelection(); break;
     case kCmdPaste: PasteClipboard(); break;
+    case kCmdPasteSpecial: PasteSpecial(false); break;
+    case kCmdPasteHtmlText: PasteSpecial(true); break;
     case kCmdDelete: ClearSelection(); break;
     case kCmdSelectAll: SetSelection({0, 0}, {DataRows() - 1, static_cast<int>(doc.ColumnCount()) - 1}); break;
     case kCmdFind: findBar.Show(true); break;

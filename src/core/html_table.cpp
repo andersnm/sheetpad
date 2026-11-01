@@ -294,8 +294,8 @@ private:
             rowOpen_ = true;
         }
         cellOpen_ = true;
-        colSpan_ = SpanOf(attributes, "colspan", kMaxColSpan);
-        rowSpan_ = SpanOf(attributes, "rowspan", kMaxRowSpan);
+        colSpan_ = fill_ == SpanFill::Ignore ? 1 : SpanOf(attributes, "colspan", kMaxColSpan);
+        rowSpan_ = fill_ == SpanFill::Ignore ? 1 : SpanOf(attributes, "rowspan", kMaxRowSpan);
         text_.clear();
     }
 

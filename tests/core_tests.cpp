@@ -80,6 +80,40 @@ void TestPasteDelimiter() {
     CHECK(DetectPasteDelimiter("a;b\nc;d") == ';');
 }
 
+void TestParseOptions() {
+    CsvParseOptions single;
+    single.quote = '\'';
+    ParsedCsv p = ParseCsv("'a,b',\"c\"\n", single);
+    CHECK(p.rows.size() == 1 && p.rows[0] == (Row{"a,b", "\"c\""}));
+    CHECK(!p.unterminatedQuote);
+    p = ParseCsv("'it''s',x", single);
+    CHECK(p.rows[0] == (Row{"it's", "x"}));
+
+    CsvParseOptions none;
+    none.quote = 0;
+    p = ParseCsv("\"a,b\"\n", none);
+    CHECK(p.rows[0] == (Row{"\"a", "b\""}));
+    CHECK(!ParseCsv("\"open\n", none).unterminatedQuote);
+    CHECK(ParseCsv("\"open\n", ',').unterminatedQuote);
+
+    CsvParseOptions space;
+    space.delimiter = ' ';
+    space.collapseDelimiters = true;
+    p = ParseCsv("  a   b c  \n\nd  \"e f\"\n", space);
+    CHECK(p.rows.size() == 3);
+    CHECK(p.rows[0] == (Row{"a", "b", "c"}));
+    CHECK(p.rows[1] == (Row{""}));
+    CHECK(p.rows[2] == (Row{"d", "e f"}));
+    CHECK(p.columnCount == 3);
+    space.collapseDelimiters = false;
+    p = ParseCsv("a  b", space);
+    CHECK(p.rows[0] == (Row{"a", "", "b"}));
+
+    CHECK(DetectDelimiter("'a;b',c;d") == ';');
+    CHECK(DetectDelimiter("'a;b',c,d", '\'') == ',');
+    CHECK(DetectDelimiter("\"a;b\",c;d", 0) == ';');
+}
+
 void TestDocumentEditing() {
     Document doc = Document::FromParsed(ParseCsv("a,b\n1,2\n", ','));
     CHECK(!doc.IsDirty());
@@ -804,7 +838,9 @@ void TestHtmlTable() {
     CHECK(ParseHtml(spans, t, SpanFill::Repeat));
     CHECK(t[0] == (Row{"wide", "wide", "tall"}));
     CHECK(t[1] == (Row{"a", "b", "tall"}));
-
+    CHECK(ParseHtml(spans, t, SpanFill::Ignore));
+    CHECK(t[0] == (Row{"wide", "tall"}));
+    CHECK(t[1] == (Row{"a", "b"}));
     // A rowspan that sits before other cells pushes them right.
     CHECK(ParseHtml("<table><tr><td rowspan=2>k</td><td>1</td></tr><tr><td>2</td></tr></table>", t));
     CHECK(t[1] == (Row{"", "2"}));
@@ -890,6 +926,7 @@ void TestAutocomplete() {
 }
 
 int main() {
+    TestParseOptions();
     TestAutocomplete();
     TestHtmlTable();
     TestParsing();

@@ -330,6 +330,8 @@ void GridWindow::ShowContextMenu(int screenX, int screenY) {
     add(kCmdCut, L"Cu&t\tCtrl+X");
     add(kCmdCopy, L"&Copy\tCtrl+C");
     add(kCmdPaste, L"&Paste\tCtrl+V");
+    add(kCmdPasteSpecial, L"Paste &Special...\tCtrl+Shift+V");
+    add(kCmdPasteHtmlText, L"Paste HT&ML Text...");
     add(kCmdDelete, L"Clear Contents\tDel");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     add(kCmdFilterColumn, L"Filter Column...\tAlt+Down");

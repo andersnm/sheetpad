@@ -9,6 +9,7 @@
 #include "formula_store.h"
 #include "frame_window.h"
 #include "grid_window.h"
+#include "import_dialog.h"
 #include "inspector_pane.h"
 #include "platform.h"
 #include "types.h"
@@ -88,6 +89,14 @@ public:
     void ClearSelection();
     void FillSelection(bool down);
     void PasteClipboard();
+    // Pastes through the import dialog. With `htmlText`, the plain text on the clipboard is parsed as HTML markup.
+    void PasteSpecial(bool htmlText);
+    // Pastes at the selection as one undo step; a single value fills a larger selection.
+    void PasteTable(sheetpad::Table table, std::size_t columnCount, bool internal);
+
+    // Settings shared by Import and Paste Special, kept for the session.
+    CsvImportOptions csvImport;
+    HtmlImportOptions htmlImport;
 
     // Files.
     bool LoadFile(const std::wstring& path);
@@ -96,6 +105,7 @@ public:
     bool ConfirmDiscard();
     void NewDocument();
     void OpenDocument();
+    void ImportFile(bool html);
 
 private:
     bool RegisterClasses(HINSTANCE instance);
@@ -103,7 +113,7 @@ private:
     void RunStructuralCommand(UINT command);
     void ResetView();
     bool SaveTo(const std::wstring& path);
-    bool PickPath(bool save, std::wstring& result);
+    bool PickPath(bool save, std::wstring& result, UINT filterId = IDS_FILE_FILTER);
     sheetpad::Table SelectionTable() const;
 };
 

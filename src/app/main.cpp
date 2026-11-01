@@ -89,7 +89,7 @@ bool App::RegisterClasses(HINSTANCE instance) {
 
 int App::Run(HINSTANCE instance, int showCommand) {
     SetProcessDPIAware();
-    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_BAR_CLASSES};
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&controls);
     HDC screen = GetDC(nullptr);
     m.dpi = GetDeviceCaps(screen, LOGPIXELSY);

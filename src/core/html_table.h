@@ -7,8 +7,9 @@
 
 namespace sheetpad {
 
-// How cells covered by a colspan/rowspan are filled, other than the cell that owns the text.
-enum class SpanFill { Blank, Repeat };
+// How cells covered by a colspan/rowspan are filled, other than the cell that owns the text. Ignore treats the
+// spans as absent, so every cell covers exactly one position.
+enum class SpanFill { Blank, Repeat, Ignore };
 
 // Returns the HTML fragment of a Windows "HTML Format" clipboard payload (the bytes between StartFragment and
 // EndFragment from its header). Input without a usable header is returned as is.

@@ -48,14 +48,14 @@ void AppendHtmlEscaped(std::string& out, std::string_view text) {
 
 }  // namespace
 
-char DetectDelimiter(std::string_view text) {
+char DetectDelimiter(std::string_view text, char quote) {
     constexpr std::array<char, 4> candidates{',', ';', '\t', '|'};
     std::array<int, 4> counts{};
     bool inQuotes = false;
     for (std::size_t i = 0; i < text.size(); ++i) {
         const char c = text[i];
-        if (c == '"') {
-            if (inQuotes && i + 1 < text.size() && text[i + 1] == '"') {
+        if (quote != 0 && c == quote) {
+            if (inQuotes && i + 1 < text.size() && text[i + 1] == quote) {
                 ++i;
             } else {
                 inQuotes = !inQuotes;
@@ -79,6 +79,14 @@ char DetectDelimiter(std::string_view text) {
 }
 
 ParsedCsv ParseCsv(std::string_view text, char delimiter) {
+    CsvParseOptions options;
+    options.delimiter = delimiter;
+    return ParseCsv(text, options);
+}
+
+ParsedCsv ParseCsv(std::string_view text, const CsvParseOptions& options) {
+    const char delimiter = options.delimiter;
+    const char quote = options.quote;
     ParsedCsv result;
     result.delimiter = delimiter;
 
@@ -88,14 +96,19 @@ ParsedCsv ParseCsv(std::string_view text, char delimiter) {
     bool started = false;
     bool newlineSeen = false;
     bool endedWithNewline = false;
+    bool afterDelimiter = false;
 
     const auto finishRecord = [&]() {
-        fields.push_back(std::move(field));
+        // With collapsing, a delimiter at the end of the line does not start another field.
+        if (!(options.collapseDelimiters && afterDelimiter && field.empty() && !fields.empty())) {
+            fields.push_back(std::move(field));
+        }
         field.clear();
         result.columnCount = std::max(result.columnCount, fields.size());
         result.rows.push_back(std::move(fields));
         fields.clear();
         started = false;
+        afterDelimiter = false;
     };
 
     for (std::size_t i = 0; i < text.size(); ++i) {
@@ -103,9 +116,9 @@ ParsedCsv ParseCsv(std::string_view text, char delimiter) {
         endedWithNewline = false;
 
         if (inQuotes) {
-            if (c == '"') {
-                if (i + 1 < text.size() && text[i + 1] == '"') {
-                    field.push_back('"');
+            if (c == quote) {
+                if (i + 1 < text.size() && text[i + 1] == quote) {
+                    field.push_back(quote);
                     ++i;
                 } else {
                     inQuotes = false;
@@ -116,13 +129,18 @@ ParsedCsv ParseCsv(std::string_view text, char delimiter) {
             continue;
         }
 
-        if (c == '"' && field.empty()) {
+        if (quote != 0 && c == quote && field.empty()) {
             inQuotes = true;
             started = true;
+            afterDelimiter = false;
         } else if (c == delimiter) {
-            fields.push_back(std::move(field));
-            field.clear();
-            started = true;
+            const bool atLineStart = fields.empty() && field.empty() && !started;
+            if (!options.collapseDelimiters || !(afterDelimiter || atLineStart)) {
+                fields.push_back(std::move(field));
+                field.clear();
+                started = true;
+                afterDelimiter = true;
+            }
         } else if (c == '\r' || c == '\n') {
             const bool crlf = c == '\r' && i + 1 < text.size() && text[i + 1] == '\n';
             if (crlf) {
@@ -137,6 +155,7 @@ ParsedCsv ParseCsv(std::string_view text, char delimiter) {
         } else {
             field.push_back(c);
             started = true;
+            afterDelimiter = false;
         }
     }
 

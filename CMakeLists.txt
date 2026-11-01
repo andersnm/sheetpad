@@ -37,6 +37,7 @@ if(WIN32)
         src/app/app_file.cpp
         src/app/cell_editor.cpp
         src/app/hint_window.cpp
+        src/app/import_dialog.cpp
         src/app/find_bar.cpp
         src/app/frame_window.cpp
         src/app/grid_drawing.cpp

@@ -20,8 +20,17 @@ struct ParsedCsv {
     bool unterminatedQuote = false;
 };
 
-// All text is UTF-8 without a BOM.
-char DetectDelimiter(std::string_view text);
+struct CsvParseOptions {
+    char delimiter = ',';
+    // The quote character; 0 turns quoting off.
+    char quote = '"';
+    // Treats a run of delimiters as one, and ignores delimiters at the start and end of a line.
+    bool collapseDelimiters = false;
+};
+
+// All text is UTF-8 without a BOM. Only the first line is examined to detect the delimiter.
+char DetectDelimiter(std::string_view text, char quote = '"');
+ParsedCsv ParseCsv(std::string_view text, const CsvParseOptions& options);
 ParsedCsv ParseCsv(std::string_view text, char delimiter);
 
 // Clipboard text prefers tabs; other delimiters are used only when the text

@@ -42,31 +42,53 @@ std::string WideToUtf8(std::wstring_view text) {
     return utf8;
 }
 
-std::string DecodeFileBytes(std::string_view bytes, Encoding& encoding) {
+Encoding DetectEncoding(std::string_view bytes) {
     const auto at = [&](std::size_t i) { return static_cast<unsigned char>(bytes[i]); };
-
-    if (bytes.size() >= 2 && ((at(0) == 0xFF && at(1) == 0xFE) || (at(0) == 0xFE && at(1) == 0xFF))) {
-        const bool bigEndian = at(0) == 0xFE;
-        std::wstring wide((bytes.size() - 2) / 2, L'\0');
-        for (std::size_t i = 0; i < wide.size(); ++i) {
-            const unsigned char lo = at(2 + i * 2 + (bigEndian ? 1 : 0));
-            const unsigned char hi = at(2 + i * 2 + (bigEndian ? 0 : 1));
-            wide[i] = static_cast<wchar_t>(lo | (hi << 8));
-        }
-        encoding = bigEndian ? Encoding::Utf16Be : Encoding::Utf16Le;
-        return WideToUtf8(wide);
+    if (bytes.size() >= 2 && at(0) == 0xFF && at(1) == 0xFE) {
+        return Encoding::Utf16Le;
+    }
+    if (bytes.size() >= 2 && at(0) == 0xFE && at(1) == 0xFF) {
+        return Encoding::Utf16Be;
     }
     if (bytes.size() >= 3 && at(0) == 0xEF && at(1) == 0xBB && at(2) == 0xBF) {
-        encoding = Encoding::Utf8Bom;
-        return std::string(bytes.substr(3));
+        return Encoding::Utf8Bom;
     }
+    return IsValidUtf8(bytes) ? Encoding::Utf8 : Encoding::Ansi;
+}
 
-    if (IsValidUtf8(bytes)) {
-        encoding = Encoding::Utf8;
-        return std::string(bytes);
+std::string DecodeBytes(std::string_view bytes, Encoding encoding) {
+    const auto at = [&](std::size_t i) { return static_cast<unsigned char>(bytes[i]); };
+    switch (encoding) {
+    case Encoding::Utf16Le:
+    case Encoding::Utf16Be: {
+        const bool bigEndian = encoding == Encoding::Utf16Be;
+        const bool hasBom = bytes.size() >= 2 && at(0) == (bigEndian ? 0xFE : 0xFF) && at(1) == (bigEndian ? 0xFF : 0xFE);
+        const std::size_t skip = hasBom ? 2 : 0;
+        std::wstring wide((bytes.size() - skip) / 2, L'\0');
+        for (std::size_t i = 0; i < wide.size(); ++i) {
+            const unsigned char lo = at(skip + i * 2 + (bigEndian ? 1 : 0));
+            const unsigned char hi = at(skip + i * 2 + (bigEndian ? 0 : 1));
+            wide[i] = static_cast<wchar_t>(lo | (hi << 8));
+        }
+        return WideToUtf8(wide);
     }
-    encoding = Encoding::Ansi;
+    case Encoding::Utf8:
+    case Encoding::Utf8Bom: {
+        if (bytes.size() >= 3 && at(0) == 0xEF && at(1) == 0xBB && at(2) == 0xBF) {
+            bytes.remove_prefix(3);
+        }
+        // Invalid sequences become U+FFFD.
+        return IsValidUtf8(bytes) ? std::string(bytes) : WideToUtf8(Utf8ToWide(bytes));
+    }
+    case Encoding::Ansi:
+        break;
+    }
     return AnsiToUtf8(bytes);
+}
+
+std::string DecodeFileBytes(std::string_view bytes, Encoding& encoding) {
+    encoding = DetectEncoding(bytes);
+    return DecodeBytes(bytes, encoding);
 }
 
 bool IsAnsiRepresentable(std::string_view utf8) {

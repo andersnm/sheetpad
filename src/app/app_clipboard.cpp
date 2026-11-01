@@ -205,7 +205,56 @@ void App::PasteClipboard() {
     if (table.empty()) {
         return;
     }
+    PasteTable(std::move(table), columnCount, internal);
+}
 
+void App::PasteSpecial(bool htmlText) {
+    if (!OpenClipboard(grid)) {
+        return;
+    }
+    const bool internal = copySequence != 0 && copySequence == GetClipboardSequenceNumber();
+
+    std::string html;
+    if (!internal && !htmlText) {
+        static const UINT htmlFormat = RegisterClipboardFormatW(L"HTML Format");
+        if (htmlFormat != 0) {
+            if (HANDLE handle = GetClipboardData(htmlFormat)) {
+                if (const auto* bytes = static_cast<const char*>(GlobalLock(handle))) {
+                    html = ExtractClipboardHtmlFragment(std::string_view(bytes, GlobalSize(handle)));
+                    GlobalUnlock(handle);
+                }
+            }
+        }
+    }
+    std::string text;
+    if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
+        if (const auto* wide = static_cast<const wchar_t*>(GlobalLock(handle))) {
+            text = WideToUtf8(wide);
+            GlobalUnlock(handle);
+        }
+    }
+    CloseClipboard();
+
+    // HTML wins when it holds any cells; otherwise the plain text goes through the CSV dialog.
+    Table probe;
+    const bool useHtml = htmlText ? !text.empty()
+                                  : !html.empty() && ParseHtml(html, probe) && !probe.empty();
+    if (htmlText) {
+        html = std::move(text);
+        text.clear();
+    }
+    if (!useHtml && text.empty()) {
+        return;
+    }
+    ImportResult imported;
+    ImportDialog dialog(*this, useHtml ? ImportDialog::Kind::Html : ImportDialog::Kind::Csv,
+                        ImportDialog::Source::Clipboard, useHtml ? std::move(html) : std::move(text));
+    if (dialog.Run(imported)) {
+        PasteTable(std::move(imported.table), imported.columnCount, internal);
+    }
+}
+
+void App::PasteTable(Table table, std::size_t columnCount, bool internal) {
     const CellRange sel = Selection();
     const bool singleValue = table.size() == 1 && table[0].size() == 1;
     const bool fill = singleValue && (sel.bottom > sel.top || sel.right > sel.left);
