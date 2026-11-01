@@ -59,7 +59,16 @@ if(WIN32)
     endif()
 
     if(MINGW)
-        target_link_options(Sheetpad PRIVATE -municode -static -static-libgcc -static-libstdc++ -Wl,--stack,33554432)
+        # Size: drop unused sections, strip symbols, and optimise across translation units.
+        target_compile_options(sheetpad_core PRIVATE -ffunction-sections -fdata-sections)
+        target_compile_options(Sheetpad PRIVATE -ffunction-sections -fdata-sections)
+        target_link_options(Sheetpad PRIVATE -municode -static -static-libgcc -static-libstdc++ -Wl,--stack,33554432
+                            -Wl,--gc-sections -s)
+        include(CheckIPOSupported)
+        check_ipo_supported(RESULT sheetpad_ipo OUTPUT sheetpad_ipo_output LANGUAGES CXX)
+        if(sheetpad_ipo)
+            set_property(TARGET sheetpad_core Sheetpad PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        endif()
     endif()
 endif()
 
