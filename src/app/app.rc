@@ -63,6 +63,14 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "&Reapply Filter and Sort", IDM_DATA_REAPPLY
     END
+    POPUP "Enc&oding"
+    BEGIN
+        MENUITEM "&ANSI", IDM_ENCODING_ANSI
+        MENUITEM "UTF-&8", IDM_ENCODING_UTF8
+        MENUITEM "UTF-8-&BOM", IDM_ENCODING_UTF8BOM
+        MENUITEM "UTF-16 B&E BOM", IDM_ENCODING_UTF16BE
+        MENUITEM "UTF-16 &LE BOM", IDM_ENCODING_UTF16LE
+    END
     POPUP "&View"
     BEGIN
         MENUITEM "Formula &Inspector\tCtrl+Shift+I", IDM_VIEW_INSPECTOR
@@ -132,4 +140,5 @@ BEGIN
     IDS_STATUS_MODIFIED "Modified"
     IDS_STATUS_SAVED "Saved"
     IDS_STATUS_FORMULA "Formula: "
+    IDS_WARN_ANSI_LOSSY "Some characters cannot be represented in the ANSI code page and will be replaced with ""?"". Save anyway?"
 END

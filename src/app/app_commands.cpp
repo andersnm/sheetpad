@@ -198,6 +198,20 @@ void App::RunCommand(UINT command) {
         }
         break;
     case kCmdFindClose: findBar.Show(false); break;
+    case kCmdEncodingAnsi:
+    case kCmdEncodingUtf8:
+    case kCmdEncodingUtf8Bom:
+    case kCmdEncodingUtf16Be:
+    case kCmdEncodingUtf16Le: {
+        const Encoding chosen = static_cast<Encoding>(command - kCmdEncodingAnsi);
+        if (doc.encoding != chosen) {
+            doc.encoding = chosen;
+            viewDirty = true;
+            UpdateTitle();
+            grid.Redraw();
+        }
+        break;
+    }
     case kCmdAutofit: {
         // The selection always has an active cell; a lone cell counts as "no columns selected", so fit them all.
         const CellRange sel = Selection();

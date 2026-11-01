@@ -14,5 +14,7 @@ std::string WideToUtf8(std::wstring_view text);
 // and returns the content as UTF-8 without a BOM.
 std::string DecodeFileBytes(std::string_view bytes, Encoding& encoding);
 std::string EncodeFileText(std::string_view utf8, Encoding encoding);
+// False when saving as ANSI would replace characters the system code page cannot represent.
+bool IsAnsiRepresentable(std::string_view utf8);
 
 }  // namespace sheetpad

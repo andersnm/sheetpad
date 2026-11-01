@@ -104,7 +104,13 @@ bool App::SaveTo(const std::wstring& targetPath) {
     } else if (HasExtension(targetPath, L".csv") && doc.delimiter == '\t') {
         doc.delimiter = ',';
     }
-    const std::string bytes = EncodeFileText(doc.Serialize(), doc.encoding);
+    const std::string serialized = doc.Serialize();
+    if (doc.encoding == Encoding::Ansi && !IsAnsiRepresentable(serialized) &&
+        MessageBoxW(grid, Res(IDS_WARN_ANSI_LOSSY).c_str(), Res(IDS_APP_TITLE).c_str(),
+                    MB_YESNO | MB_ICONWARNING) != IDYES) {
+        return false;
+    }
+    const std::string bytes = EncodeFileText(serialized, doc.encoding);
     if (!WriteFileAtomic(targetPath, bytes)) {
         MessageBoxW(grid, Res(IDS_ERR_SAVE_FILE).c_str(), Res(IDS_APP_TITLE).c_str(), MB_OK | MB_ICONERROR);
         return false;

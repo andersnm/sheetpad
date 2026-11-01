@@ -14,7 +14,7 @@
 
 namespace sheetpad {
 
-enum class Encoding { Utf8, Utf8Bom, Utf16Le };
+enum class Encoding { Ansi, Utf8, Utf8Bom, Utf16Be, Utf16Le };
 
 struct CellEdit {
     std::size_t row = 0;

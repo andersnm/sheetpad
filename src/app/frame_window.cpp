@@ -82,6 +82,8 @@ void FrameWindow::UpdateMenu(HMENU menu) {
     EnableMenuItem(menu, kCmdClearSort, MF_BYCOMMAND | (app_.view.sorts.empty() ? MF_GRAYED : MF_ENABLED));
     EnableMenuItem(menu, kCmdApplySort, MF_BYCOMMAND | (app_.view.sorts.empty() ? MF_GRAYED : MF_ENABLED));
     EnableMenuItem(menu, kCmdReapply, MF_BYCOMMAND | (app_.view.Active() ? MF_ENABLED : MF_GRAYED));
+    CheckMenuRadioItem(menu, kCmdEncodingAnsi, kCmdEncodingUtf16Le,
+                       kCmdEncodingAnsi + static_cast<UINT>(app_.doc.encoding), MF_BYCOMMAND);
 }
 
 void FrameWindow::Layout() {

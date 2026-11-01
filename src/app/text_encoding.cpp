@@ -53,7 +53,7 @@ std::string DecodeFileBytes(std::string_view bytes, Encoding& encoding) {
             const unsigned char hi = at(2 + i * 2 + (bigEndian ? 0 : 1));
             wide[i] = static_cast<wchar_t>(lo | (hi << 8));
         }
-        encoding = Encoding::Utf16Le;
+        encoding = bigEndian ? Encoding::Utf16Be : Encoding::Utf16Le;
         return WideToUtf8(wide);
     }
     if (bytes.size() >= 3 && at(0) == 0xEF && at(1) == 0xBB && at(2) == 0xBF) {
@@ -61,22 +61,52 @@ std::string DecodeFileBytes(std::string_view bytes, Encoding& encoding) {
         return std::string(bytes.substr(3));
     }
 
-    encoding = Encoding::Utf8;
     if (IsValidUtf8(bytes)) {
+        encoding = Encoding::Utf8;
         return std::string(bytes);
     }
+    encoding = Encoding::Ansi;
     return AnsiToUtf8(bytes);
+}
+
+bool IsAnsiRepresentable(std::string_view utf8) {
+    const std::wstring wide = Utf8ToWide(utf8);
+    if (wide.empty()) {
+        return true;
+    }
+    BOOL usedDefault = FALSE;
+    WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, &usedDefault);
+    return !usedDefault;
 }
 
 std::string EncodeFileText(std::string_view utf8, Encoding encoding) {
     switch (encoding) {
     case Encoding::Utf8Bom:
         return std::string("\xEF\xBB\xBF") + std::string(utf8);
-    case Encoding::Utf16Le: {
+    case Encoding::Utf16Le:
+    case Encoding::Utf16Be: {
+        const bool bigEndian = encoding == Encoding::Utf16Be;
         const std::wstring wide = Utf8ToWide(utf8);
-        std::string out("\xFF\xFE", 2);
-        out.resize(2 + wide.size() * sizeof(wchar_t));
-        std::memcpy(out.data() + 2, wide.data(), wide.size() * sizeof(wchar_t));
+        std::string out(bigEndian ? "\xFE\xFF" : "\xFF\xFE", 2);
+        out.reserve(2 + wide.size() * 2);
+        for (const wchar_t unit : wide) {
+            const char lo = static_cast<char>(unit & 0xFF);
+            const char hi = static_cast<char>((unit >> 8) & 0xFF);
+            out.push_back(bigEndian ? hi : lo);
+            out.push_back(bigEndian ? lo : hi);
+        }
+        return out;
+    }
+    case Encoding::Ansi: {
+        const std::wstring wide = Utf8ToWide(utf8);
+        if (wide.empty()) {
+            return {};
+        }
+        const int length = WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0,
+                                               nullptr, nullptr);
+        std::string out(static_cast<std::size_t>(length), '\0');
+        WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), out.data(), length, nullptr,
+                            nullptr);
         return out;
     }
     case Encoding::Utf8:
