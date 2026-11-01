@@ -10,6 +10,7 @@ add_library(sheetpad_core STATIC
     src/core/csv.cpp
     src/core/document.cpp
     src/core/formula.cpp
+    src/core/autocomplete.cpp
     src/core/formula_store.cpp
     src/core/html_table.cpp
     src/core/view.cpp
@@ -35,6 +36,7 @@ if(WIN32)
         src/app/app_commands.cpp
         src/app/app_file.cpp
         src/app/cell_editor.cpp
+        src/app/hint_window.cpp
         src/app/find_bar.cpp
         src/app/frame_window.cpp
         src/app/grid_drawing.cpp

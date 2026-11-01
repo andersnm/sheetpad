@@ -8,6 +8,7 @@
 #include "formula.h"
 #include "formula_store.h"
 #include "html_table.h"
+#include "autocomplete.h"
 #include "view.h"
 
 using namespace sheetpad;
@@ -837,7 +838,59 @@ void TestHtmlTable() {
 
 }  // namespace
 
+void TestAutocomplete() {
+    // every registered function parses with its minimum argument count
+    for (const FunctionInfo& info : FunctionRegistry()) {
+        std::string formula = std::string("=") + info.name + "(";
+        for (std::size_t i = 0; i < info.minArgs; ++i) {
+            formula += i ? ",1" : "1";
+        }
+        formula += ")";
+        CHECK(ParseFormula(formula) != nullptr);
+        formula.insert(formula.size() - 1, std::string(info.maxArgs + 1, ',') + "1");
+        CHECK(ParseFormula(formula) == nullptr || info.maxArgs >= 255);
+    }
+
+    const TokenRange t = TokenAt("=SUM(A1)", 3);
+    CHECK(t.start == 1 && t.end == 4);
+    const TokenRange e = TokenAt("=", 1);
+    CHECK(e.start == 1 && e.end == 1);
+    CHECK(TokenAt("=SU(M", 3).start == 1);
+
+    CHECK(CompletionsFor("").size() == FunctionRegistry().size());
+    const auto ro = CompletionsFor("ro");
+    CHECK(ro.size() == 3 && std::string(ro[0]->name) == "ROUND" && std::string(ro[1]->name) == "ROUNDDOWN" &&
+          std::string(ro[2]->name) == "ROUNDUP");
+    CHECK(CompletionsFor("zz").empty());
+
+    CHECK(NeedsParentheses("=SU", 3));
+    CHECK(!NeedsParentheses("=SU (A1)", 3));
+    CHECK(!NeedsParentheses("=SU(A1)", 3));
+
+    const std::string nested = "=SUM(A1, IF(B1>0, ";
+    auto call = CallAt(nested, nested.size());
+    CHECK(call && std::string(call->info->name) == "IF" && call->argIndex == 1);
+    const std::string tricky = "=IF(A1=\"a,b)\", 1, ";
+    call = CallAt(tricky, tricky.size());
+    CHECK(call && std::string(call->info->name) == "IF" && call->argIndex == 2);
+    const std::string closed = "=SUM(A1) + ";
+    CHECK(!CallAt(closed, closed.size()));
+    const std::string grouped = "=ROUND((1+2), ";
+    call = CallAt(grouped, grouped.size());
+    CHECK(call && std::string(call->info->name) == "ROUND" && call->argIndex == 1);
+    CHECK(!CallAt("=FOO(1, ", 8));
+    CHECK(InStringLiteral("=\"ab", 4) && !InStringLiteral("=\"ab\"", 5));
+
+    const FunctionInfo* round = FindFunction("ROUND");
+    const auto digits = SignatureArgRange(*round, 1);
+    CHECK(std::string(round->signature).substr(digits.first, digits.second) == "digits");
+    const FunctionInfo* sum = FindFunction("SUM");
+    const auto more = SignatureArgRange(*sum, 7);
+    CHECK(std::string(sum->signature).substr(more.first, more.second) == "...");
+}
+
 int main() {
+    TestAutocomplete();
     TestHtmlTable();
     TestParsing();
     TestRoundTrip();

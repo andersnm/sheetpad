@@ -74,7 +74,10 @@ bool App::RegisterClasses(HINSTANCE instance) {
     filterClass.lpszClassName = kFilterClass;
     filterClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
 
-    for (const WNDCLASSEXW* cls : {&windowClass, &frameClass, &filterClass}) {
+    WNDCLASSEXW hintClass = windowClass;
+    hintClass.lpszClassName = kHintClass;
+
+    for (const WNDCLASSEXW* cls : {&windowClass, &frameClass, &filterClass, &hintClass}) {
         if (!WindowHandle::Register(*cls)) {
             MessageBoxW(nullptr, Res(IDS_ERR_REGISTER_CLASS).c_str(), Res(IDS_APP_TITLE).c_str(),
                         MB_OK | MB_ICONERROR);

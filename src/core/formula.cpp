@@ -1,5 +1,7 @@
 #include "formula.h"
 
+#include "autocomplete.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -682,34 +684,29 @@ private:
             return unknown;
         }
 
-        struct FuncInfo {
-            const char* name;
-            Expr::Func func;
-            std::size_t minArgs;
-            std::size_t maxArgs;
+        // Argument limits come from the shared registry; this table only maps names to evaluator ids.
+        static const std::pair<const char*, Expr::Func> funcIds[] = {
+            {"SUM", Expr::Func::Sum},       {"AVERAGE", Expr::Func::Avg},     {"MIN", Expr::Func::Min},
+            {"MAX", Expr::Func::Max},       {"COUNT", Expr::Func::Count},     {"COUNTA", Expr::Func::CountA},
+            {"ABS", Expr::Func::Abs},       {"ROUND", Expr::Func::Round},     {"ROUNDUP", Expr::Func::RoundUp},
+            {"ROUNDDOWN", Expr::Func::RoundDown}, {"INT", Expr::Func::Int},   {"MOD", Expr::Func::Mod},
+            {"IF", Expr::Func::If},         {"IFERROR", Expr::Func::IfError}, {"AND", Expr::Func::And},
+            {"OR", Expr::Func::Or},         {"NOT", Expr::Func::Not},         {"SUMIF", Expr::Func::SumIf},
+            {"CONCAT", Expr::Func::Concat}, {"LEN", Expr::Func::Len},
         };
-        static const FuncInfo functions[] = {
-            {"SUM", Expr::Func::Sum, 1, 255},         {"AVERAGE", Expr::Func::Avg, 1, 255},
-            {"MIN", Expr::Func::Min, 1, 255},         {"MAX", Expr::Func::Max, 1, 255},
-            {"COUNT", Expr::Func::Count, 1, 255},     {"COUNTA", Expr::Func::CountA, 1, 255},
-            {"ABS", Expr::Func::Abs, 1, 1},           {"ROUND", Expr::Func::Round, 2, 2},
-            {"ROUNDUP", Expr::Func::RoundUp, 2, 2},   {"ROUNDDOWN", Expr::Func::RoundDown, 2, 2},
-            {"INT", Expr::Func::Int, 1, 1},           {"MOD", Expr::Func::Mod, 2, 2},
-            {"IF", Expr::Func::If, 2, 3},             {"IFERROR", Expr::Func::IfError, 2, 2},
-            {"AND", Expr::Func::And, 1, 255},         {"OR", Expr::Func::Or, 1, 255},
-            {"NOT", Expr::Func::Not, 1, 1},           {"SUMIF", Expr::Func::SumIf, 2, 3},
-            {"CONCAT", Expr::Func::Concat, 1, 255},   {"LEN", Expr::Func::Len, 1, 1},
-        };
-        const FuncInfo* info = nullptr;
-        for (const FuncInfo& candidate : functions) {
-            if (name == candidate.name) {
-                info = &candidate;
+        const FunctionInfo* info = FindFunction(name);
+        Expr::Func funcId = Expr::Func::Unknown;
+        if (info) {
+            for (const auto& entry : funcIds) {
+                if (name == entry.first) {
+                    funcId = entry.second;
+                }
             }
         }
 
         ++pos_;  // '('
         auto node = Make(Expr::Kind::Call);
-        node->func = info ? info->func : Expr::Func::Unknown;
+        node->func = funcId;
         node->text = name;
         if (PeekOp(")")) {
             return nullptr;

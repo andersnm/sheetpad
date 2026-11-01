@@ -58,6 +58,7 @@ enum Command : UINT {
 constexpr wchar_t kWindowClass[] = L"SheetpadGrid";
 constexpr wchar_t kFrameClass[] = L"SheetpadWindow";
 constexpr wchar_t kFilterClass[] = L"SheetpadFilter";
+constexpr wchar_t kHintClass[] = L"SheetpadHint";
 constexpr std::size_t kBlankRows = 20;
 constexpr std::size_t kBlankColumns = 8;
 constexpr wchar_t kFormulaSuffix[] = L".formulas.json";
