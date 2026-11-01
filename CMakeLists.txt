@@ -29,17 +29,20 @@ if(WIN32)
     enable_language(RC)
     add_executable(Sheetpad WIN32
         src/app/main.cpp
-        src/app/app_cell_editor.cpp
+        src/app/app.cpp
         src/app/app_clipboard.cpp
-        src/app/app_document.cpp
-        src/app/app_drawing.cpp
+        src/app/app_commands.cpp
         src/app/app_file.cpp
-        src/app/app_filter.cpp
-        src/app/app_find.cpp
-        src/app/app_frame.cpp
-        src/app/app_inspector.cpp
-        src/app/app_layout.cpp
+        src/app/cell_editor.cpp
+        src/app/find_bar.cpp
+        src/app/frame_window.cpp
+        src/app/grid_drawing.cpp
+        src/app/grid_filter.cpp
+        src/app/grid_layout.cpp
+        src/app/grid_window.cpp
+        src/app/inspector_pane.cpp
         src/app/text_encoding.cpp
+        src/app/window_handle.cpp
         src/app/app.rc
     )
     target_include_directories(Sheetpad PRIVATE src/app)

@@ -1,31 +1,19 @@
-#include <windows.h>
-#include <commctrl.h>
-#include <commdlg.h>
-#include <shellapi.h>
-#include <windowsx.h>
+#include "app.h"
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
-#include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <fstream>
-#include <optional>
 #include <string>
-#include <vector>
 
-#include "csv.h"
-#include "document.h"
-#include "formula_store.h"
 #include "text_encoding.h"
-#include "view.h"
-#include "app.h"
 
 using namespace sheetpad;
 
 namespace app {
 
-// ---------------------------------------------------------------- files
+namespace {
 
 bool ReadFileBytes(const std::wstring& path, std::string& bytes) {
     std::ifstream input{std::filesystem::path(path), std::ios::binary | std::ios::ate};
@@ -64,102 +52,103 @@ bool HasExtension(const std::wstring& path, const wchar_t* extension) {
     return _wcsicmp(std::filesystem::path(path).extension().c_str(), extension) == 0;
 }
 
-void ResetView() {
-    g.anchor = {};
-    g.active = {};
-    g.firstRow = 0;
-    g.firstCol = 0;
+}  // namespace
+
+// ---------------------------------------------------------------- files
+
+void App::ResetView() {
+    anchor = {};
+    active = {};
+    grid.ResetScroll();
 }
 
-bool LoadFile(HWND window, const std::wstring& path) {
+bool App::LoadFile(const std::wstring& filePath) {
     const WaitCursor wait;
     std::string bytes;
-    if (!ReadFileBytes(path, bytes)) {
-        MessageBoxW(window, L"The file could not be read.", L"Sheetpad", MB_OK | MB_ICONERROR);
+    if (!ReadFileBytes(filePath, bytes)) {
+        MessageBoxW(grid, L"The file could not be read.", L"Sheetpad", MB_OK | MB_ICONERROR);
         return false;
     }
     Encoding encoding = Encoding::Utf8;
     const std::string text = DecodeFileBytes(bytes, encoding);
-    ParsedCsv parsed = ParseCsv(text, HasExtension(path, L".tsv") ? '\t' : DetectDelimiter(text));
+    ParsedCsv parsed = ParseCsv(text, HasExtension(filePath, L".tsv") ? '\t' : DetectDelimiter(text));
     if (parsed.unterminatedQuote) {
-        MessageBoxW(window, L"The file ends inside a quoted field, so it is not valid CSV.", L"Sheetpad",
+        MessageBoxW(grid, L"The file ends inside a quoted field, so it is not valid CSV.", L"Sheetpad",
                     MB_OK | MB_ICONERROR);
         return false;
     }
 
-    g.doc = Document::FromParsed(std::move(parsed));
-    g.doc.encoding = encoding;
-    g.sidecarInvalid = false;
-    g.view = RowView{};
-    g.viewDirty = false;
+    doc = Document::FromParsed(std::move(parsed));
+    doc.encoding = encoding;
+    sidecarInvalid = false;
+    view = RowView{};
+    viewDirty = false;
     std::string sidecar;
-    if (ReadFileBytes(path + kFormulaSuffix, sidecar) && !ApplyFormulaJson(g.doc, sidecar, &g.view)) {
-        g.sidecarInvalid = true;
-        g.view = RowView{};
-        MessageBoxW(window,
+    if (ReadFileBytes(filePath + kFormulaSuffix, sidecar) && !ApplyFormulaJson(doc, sidecar, &view)) {
+        sidecarInvalid = true;
+        view = RowView{};
+        MessageBoxW(grid,
                     L"The formula file next to this CSV could not be read, so the formulas were not loaded. "
                     L"It will be left untouched unless you save formulas of your own.",
                     L"Sheetpad", MB_OK | MB_ICONWARNING);
     }
-    g.path = path;
+    path = filePath;
     ResetView();
-    g.view.Rebuild(g.doc);
-    g.viewStale = false;
-    AfterDocumentChanged(window);
+    view.Rebuild(doc);
+    viewStale = false;
+    AfterDocumentChanged();
     return true;
 }
 
-bool SaveTo(HWND window, const std::wstring& path) {
-    CommitEdit(window);
-    if (HasExtension(path, L".tsv")) {
-        g.doc.delimiter = '\t';
-    } else if (HasExtension(path, L".csv") && g.doc.delimiter == '\t') {
-        g.doc.delimiter = ',';
+bool App::SaveTo(const std::wstring& targetPath) {
+    grid.editor.Commit();
+    if (HasExtension(targetPath, L".tsv")) {
+        doc.delimiter = '\t';
+    } else if (HasExtension(targetPath, L".csv") && doc.delimiter == '\t') {
+        doc.delimiter = ',';
     }
-    const std::string bytes = EncodeFileText(g.doc.Serialize(), g.doc.encoding);
-    if (!WriteFileAtomic(path, bytes)) {
-        MessageBoxW(window, L"The file could not be saved.", L"Sheetpad", MB_OK | MB_ICONERROR);
+    const std::string bytes = EncodeFileText(doc.Serialize(), doc.encoding);
+    if (!WriteFileAtomic(targetPath, bytes)) {
+        MessageBoxW(grid, L"The file could not be saved.", L"Sheetpad", MB_OK | MB_ICONERROR);
         return false;
     }
 
-    const std::string formulaJson = BuildFormulaJson(g.doc, &g.view);
-    const std::wstring formulaPath = path + kFormulaSuffix;
-    const bool samePath = path == g.path;
+    const std::string formulaJson = BuildFormulaJson(doc, &view);
+    const std::wstring formulaPath = targetPath + kFormulaSuffix;
+    const bool samePath = targetPath == path;
     if (!formulaJson.empty()) {
         if (!WriteFileAtomic(formulaPath, formulaJson)) {
-            MessageBoxW(window, L"The CSV was saved, but the formula file could not be written.", L"Sheetpad",
+            MessageBoxW(grid, L"The CSV was saved, but the formula file could not be written.", L"Sheetpad",
                         MB_OK | MB_ICONERROR);
             return false;
         }
-        g.sidecarInvalid = false;
-    } else if (!(g.sidecarInvalid && samePath)) {
+        sidecarInvalid = false;
+    } else if (!(sidecarInvalid && samePath)) {
         // No formulas: remove a stale metadata file so it cannot be applied to this CSV later.
         DeleteFileW(formulaPath.c_str());
-        g.sidecarInvalid = false;
+        sidecarInvalid = false;
     }
-    g.path = path;
-    g.doc.MarkSaved();
-    g.viewDirty = false;
-    UpdateTitle(window);
+    path = targetPath;
+    doc.MarkSaved();
+    viewDirty = false;
+    UpdateTitle();
     return true;
 }
 
-bool PickPath(HWND window, bool save, std::wstring& result) {
-    (void)window;
+bool App::PickPath(bool save, std::wstring& result) {
     std::array<wchar_t, 32768> buffer{};
-    if (save && !g.path.empty()) {
-        wcsncpy(buffer.data(), g.path.c_str(), buffer.size() - 1);
+    if (save && !path.empty()) {
+        wcsncpy(buffer.data(), path.c_str(), buffer.size() - 1);
     }
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = g.frame;
+    dialog.hwndOwner = frame;
     dialog.lpstrFilter =
         L"CSV and tab-separated files (*.csv;*.tsv)\0*.csv;*.tsv\0All files (*.*)\0*.*\0";
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.lpstrDefExt = L"csv";
-    dialog.Flags = OFN_PATHMUSTEXIST | OFN_HIDEREADONLY |
-                   (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
     if (!(save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog))) {
         return false;
     }
@@ -167,53 +156,53 @@ bool PickPath(HWND window, bool save, std::wstring& result) {
     return true;
 }
 
-bool SaveAs(HWND window) {
-    CommitEdit(window);
-    std::wstring path;
-    return PickPath(window, true, path) && SaveTo(window, path);
+bool App::SaveAs() {
+    grid.editor.Commit();
+    std::wstring target;
+    return PickPath(true, target) && SaveTo(target);
 }
 
-bool Save(HWND window) {
-    CommitEdit(window);
-    return g.path.empty() ? SaveAs(window) : SaveTo(window, g.path);
+bool App::Save() {
+    grid.editor.Commit();
+    return path.empty() ? SaveAs() : SaveTo(path);
 }
 
-bool ConfirmDiscard(HWND window) {
-    CommitEdit(window);
+bool App::ConfirmDiscard() {
+    grid.editor.Commit();
     if (!IsDirty()) {
         return true;
     }
     const std::wstring prompt =
-        L"Do you want to save changes to " + (g.path.empty() ? std::wstring(L"Untitled") : BaseName(g.path)) + L"?";
-    switch (MessageBoxW(window, prompt.c_str(), L"Sheetpad", MB_YESNOCANCEL | MB_ICONWARNING)) {
-    case IDYES: return Save(window);
+        L"Do you want to save changes to " + (path.empty() ? std::wstring(L"Untitled") : BaseName(path)) + L"?";
+    switch (MessageBoxW(grid, prompt.c_str(), L"Sheetpad", MB_YESNOCANCEL | MB_ICONWARNING)) {
+    case IDYES: return Save();
     case IDNO: return true;
     default: return false;
     }
 }
 
-void NewDocument(HWND window) {
-    if (!ConfirmDiscard(window)) {
+void App::NewDocument() {
+    if (!ConfirmDiscard()) {
         return;
     }
-    g.doc = Document::Blank(kBlankRows, kBlankColumns);
-    g.view = RowView{};
-    g.viewDirty = false;
-    g.viewStale = false;
-    g.path.clear();
-    g.sidecarInvalid = false;
+    doc = Document::Blank(kBlankRows, kBlankColumns);
+    view = RowView{};
+    viewDirty = false;
+    viewStale = false;
+    path.clear();
+    sidecarInvalid = false;
     ResetView();
-    AfterDocumentChanged(window);
+    AfterDocumentChanged();
 }
 
-void OpenDocument(HWND window) {
-    if (!ConfirmDiscard(window)) {
+void App::OpenDocument() {
+    if (!ConfirmDiscard()) {
         return;
     }
-    std::wstring path;
-    if (PickPath(window, false, path)) {
-        LoadFile(window, path);
+    std::wstring target;
+    if (PickPath(false, target)) {
+        LoadFile(target);
     }
 }
 
-}
+}  // namespace app

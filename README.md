@@ -127,7 +127,7 @@ cmake -S . -B build-native -G Ninja && cmake --build build-native
 
 Layout:
 - `src/core/`: portable, unit-tested core (CSV, document model, formulas, sidecar, filter/sort view); no Windows headers
-- `src/app/`: the Win32 application (`main.cpp`, `app_*.cpp`, resources, icon)
+- `src/app/`: the Win32 application: one header and source per window class (`grid_window`, `frame_window`, `find_bar`, `inspector_pane`, `cell_editor`) on top of the `WindowHandle` wrapper, shared `types.h` and `platform.h`, and `App` (`app.h`, `app.cpp`, `app_*.cpp`) which owns them (`main.cpp`, resources, icon)
 - `tests/`: core unit tests and the benchmark
 - `tools/`: `make_icon.py` regenerates `src/app/app.ico`
 - `docs/`: specification, ideas and images; `site/`: GitHub Pages website

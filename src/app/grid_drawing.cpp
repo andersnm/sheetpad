@@ -1,56 +1,18 @@
-#include <windows.h>
-#include <commctrl.h>
-#include <commdlg.h>
-#include <shellapi.h>
-#include <windowsx.h>
+#include "grid_window.h"
 
 #include <algorithm>
-#include <array>
-#include <cstdio>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <optional>
 #include <string>
-#include <vector>
 
-#include "csv.h"
-#include "document.h"
-#include "formula_store.h"
-#include "text_encoding.h"
-#include "view.h"
 #include "app.h"
+#include "text_encoding.h"
 
 using namespace sheetpad;
 
 namespace app {
 
+namespace {
+
 constexpr std::size_t kMaxDisplayBytes = 1024;
-
-// ---------------------------------------------------------------- painting
-
-void DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) {
-    if (text.size() > kMaxDisplayBytes) {
-        std::size_t cut = kMaxDisplayBytes;
-        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
-            --cut;
-        }
-        text = text.substr(0, cut);
-    }
-    std::wstring wide = Utf8ToWide(text);
-    std::wstring shown;
-    shown.reserve(wide.size());
-    for (std::size_t i = 0; i < wide.size(); ++i) {
-        if (wide[i] == L'\r' && i + 1 < wide.size() && wide[i + 1] == L'\n') {
-            continue;
-        }
-        shown.push_back(wide[i] == L'\r' || wide[i] == L'\n' ? L'\u00B6' : wide[i]);
-    }
-    rect.left += g.m.padding;
-    rect.right -= g.m.padding;
-    DrawTextW(dc, shown.c_str(), static_cast<int>(shown.size()), &rect,
-              flags | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
-}
 
 COLORREF Blend(COLORREF foreground, COLORREF background, int foregroundPercent) {
     const auto mix = [&](int f, int b) { return (f * foregroundPercent + b * (100 - foregroundPercent)) / 100; };
@@ -72,13 +34,44 @@ void DrawTriangle(HDC dc, int cx, int cy, int half, bool up, COLORREF color) {
     DeleteObject(brush);
 }
 
-RECT FilterButtonRect(int col) {
-    const int x = g.m.rowNumberWidth + (col - g.firstCol) * g.m.columnWidth;
-    return {x + g.m.columnWidth - Scale(20) - 1, 1, x + g.m.columnWidth - 1, g.m.headerHeight - 1};
+}  // namespace
+
+// ---------------------------------------------------------------- painting
+
+void GridWindow::DrawUtf8(HDC dc, std::string_view text, RECT rect, UINT flags) {
+    if (text.size() > kMaxDisplayBytes) {
+        std::size_t cut = kMaxDisplayBytes;
+        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
+            --cut;
+        }
+        text = text.substr(0, cut);
+    }
+    std::wstring wide = Utf8ToWide(text);
+    std::wstring shown;
+    shown.reserve(wide.size());
+    for (std::size_t i = 0; i < wide.size(); ++i) {
+        if (wide[i] == L'\r' && i + 1 < wide.size() && wide[i + 1] == L'\n') {
+            continue;
+        }
+        shown.push_back(wide[i] == L'\r' || wide[i] == L'\n' ? L'\u00B6' : wide[i]);
+    }
+    rect.left += app_.m.padding;
+    rect.right -= app_.m.padding;
+    DrawTextW(dc, shown.c_str(), static_cast<int>(shown.size()), &rect,
+              flags | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
 }
 
-void DrawGrid(HDC dc, const RECT& client) {
-    const Metrics& m = g.m;
+RECT GridWindow::FilterButtonRect(int col) const {
+    const Metrics& m = app_.m;
+    const int x = m.rowNumberWidth + (col - firstCol_) * m.columnWidth;
+    return {x + m.columnWidth - app_.Scale(20) - 1, 1, x + m.columnWidth - 1, m.headerHeight - 1};
+}
+
+void GridWindow::DrawGrid(HDC dc, const RECT& client) {
+    const Metrics& m = app_.m;
+    const Document& doc = app_.doc;
+    const RowView& view = app_.view;
+    const auto& matcher = app_.findBar.Matcher();
     const COLORREF windowColor = GetSysColor(COLOR_WINDOW);
     const COLORREF textColor = GetSysColor(COLOR_WINDOWTEXT);
     const COLORREF accent = GetSysColor(COLOR_HIGHLIGHT);
@@ -97,31 +90,31 @@ void DrawGrid(HDC dc, const RECT& client) {
     const COLORREF glyphColor = Blend(textColor, windowColor, 55);
 
     FillRect(dc, &client, windowBrush);
-    SelectObject(dc, g.font);
+    SelectObject(dc, app_.font);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, textColor);
 
     const int right = static_cast<int>(client.right);
     const int gridBottom = static_cast<int>(client.bottom);
-    const CellRange sel = Selection();
-    const int lastCol = std::min(GridCols() - 1, g.firstCol + (right - m.rowNumberWidth) / m.columnWidth + 1);
-    const int lastRow = std::min(GridRows() - 1, g.firstRow + (gridBottom - m.headerHeight) / m.rowHeight + 1);
-    const int dataRows = DataRows();
-    const int dataCols = static_cast<int>(g.doc.ColumnCount());
-    const bool highlightFinds = g.findVisible && g.matcher && g.matcher->Valid() && !g.matcher->Empty();
+    const CellRange sel = app_.Selection();
+    const int lastCol = std::min(app_.GridCols() - 1, firstCol_ + (right - m.rowNumberWidth) / m.columnWidth + 1);
+    const int lastRow = std::min(app_.GridRows() - 1, firstRow_ + (gridBottom - m.headerHeight) / m.rowHeight + 1);
+    const int dataRows = app_.DataRows();
+    const int dataCols = static_cast<int>(doc.ColumnCount());
+    const bool highlightFinds = app_.findBar.Visible() && matcher && matcher->Valid() && !matcher->Empty();
 
     SaveDC(dc);
     IntersectClipRect(dc, m.rowNumberWidth, m.headerHeight, right, gridBottom);
-    for (int row = g.firstRow; row <= lastRow; ++row) {
-        const std::size_t docRow = DocRowOf(row);
-        const bool titleRow = row < dataRows && docRow < g.view.headerRows;
-        for (int col = g.firstCol; col <= lastCol; ++col) {
+    for (int row = firstRow_; row <= lastRow; ++row) {
+        const std::size_t docRow = app_.DocRowOf(row);
+        const bool titleRow = row < dataRows && docRow < view.headerRows;
+        for (int col = firstCol_; col <= lastCol; ++col) {
             const RECT cell = CellRect({row, col});
             const bool inRange = row >= sel.top && row <= sel.bottom && col >= sel.left && col <= sel.right;
-            const bool isActive = row == g.active.row && col == g.active.col;
+            const bool isActive = row == app_.active.row && col == app_.active.col;
             const bool spare = row >= dataRows || col >= dataCols;
-            const std::string& value = g.doc.Cell(docRow, static_cast<std::size_t>(col));
-            const bool found = highlightFinds && !spare && g.matcher->Matches(value);
+            const std::string& value = doc.Cell(docRow, static_cast<std::size_t>(col));
+            const bool found = highlightFinds && !spare && matcher->Matches(value);
             HBRUSH background = windowBrush;
             if (inRange && !isActive) {
                 background = rangeBrush;
@@ -139,7 +132,7 @@ void DrawGrid(HDC dc, const RECT& client) {
             FillRect(dc, &vertical, gridBrush);
             FillRect(dc, &horizontal, gridBrush);
 
-            const bool isFormula = !g.doc.Formula(docRow, static_cast<std::size_t>(col)).empty();
+            const bool isFormula = !doc.Formula(docRow, static_cast<std::size_t>(col)).empty();
             if (!value.empty()) {
                 const bool isError = isFormula && value.front() == '#';
                 if (isError) {
@@ -151,7 +144,7 @@ void DrawGrid(HDC dc, const RECT& client) {
                 }
             }
             if (isFormula) {
-                const int size = Scale(6);
+                const int size = app_.Scale(6);
                 for (int i = 0; i < size; ++i) {
                     const RECT bar{cell.right - 1 - (size - i), cell.top + i, cell.right - 1, cell.top + i + 1};
                     FillRect(dc, &bar, accentBrush);
@@ -169,29 +162,29 @@ void DrawGrid(HDC dc, const RECT& client) {
     FrameRect(dc, &outline, accentBrush);
     RestoreDC(dc, -1);
 
-    for (int col = g.firstCol; col <= lastCol; ++col) {
-        const int x = m.rowNumberWidth + (col - g.firstCol) * m.columnWidth;
+    for (int col = firstCol_; col <= lastCol; ++col) {
+        const int x = m.rowNumberWidth + (col - firstCol_) * m.columnWidth;
         const RECT header{x, 0, x + m.columnWidth, m.headerHeight};
         FillRect(dc, &header, col >= sel.left && col <= sel.right ? headerSelectedBrush : headerBrush);
         const RECT edge{header.right - 1, 0, header.right, header.bottom};
         FillRect(dc, &edge, gridBrush);
         const std::wstring label = ColumnName(col);
         RECT labelRect = header;
-        labelRect.right -= col < dataCols ? Scale(20) : 0;
+        labelRect.right -= col < dataCols ? app_.Scale(20) : 0;
         DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &labelRect,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 
         if (col < dataCols) {
             const RECT button = FilterButtonRect(col);
-            const bool filtered = g.view.filters.count(static_cast<std::size_t>(col)) != 0;
+            const bool filtered = view.filters.count(static_cast<std::size_t>(col)) != 0;
             if (filtered) {
                 FillRect(dc, &button, filterBrush);
             }
-            DrawTriangle(dc, (button.left + button.right) / 2, (button.top + button.bottom) / 2, Scale(4), false,
+            DrawTriangle(dc, (button.left + button.right) / 2, (button.top + button.bottom) / 2, app_.Scale(4), false,
                          filtered ? accent : glyphColor);
-            for (const SortLevel& level : g.view.sorts) {
+            for (const SortLevel& level : view.sorts) {
                 if (level.column == static_cast<std::size_t>(col)) {
-                    DrawTriangle(dc, button.left - Scale(9), (button.top + button.bottom) / 2, Scale(4),
+                    DrawTriangle(dc, button.left - app_.Scale(9), (button.top + button.bottom) / 2, app_.Scale(4),
                                  !level.descending, accent);
                 }
             }
@@ -202,15 +195,15 @@ void DrawGrid(HDC dc, const RECT& client) {
 
     SaveDC(dc);
     IntersectClipRect(dc, 0, m.headerHeight, m.rowNumberWidth, gridBottom);
-    for (int row = g.firstRow; row <= lastRow; ++row) {
-        const int y = m.headerHeight + (row - g.firstRow) * m.rowHeight;
+    for (int row = firstRow_; row <= lastRow; ++row) {
+        const int y = m.headerHeight + (row - firstRow_) * m.rowHeight;
         const RECT header{0, y, m.rowNumberWidth, y + m.rowHeight};
         FillRect(dc, &header, row >= sel.top && row <= sel.bottom ? headerSelectedBrush : headerBrush);
         const RECT edge{0, header.bottom - 1, header.right, header.bottom};
         FillRect(dc, &edge, gridBrush);
-        const std::wstring label = std::to_wstring(DocRowOf(row) + 1);
+        const std::wstring label = std::to_wstring(app_.DocRowOf(row) + 1);
         RECT labelRect = header;
-        if (g.view.Active() && row < dataRows) {
+        if (view.Active() && row < dataRows) {
             SetTextColor(dc, accent);
         }
         DrawTextW(dc, label.c_str(), static_cast<int>(label.size()), &labelRect,
@@ -234,31 +227,31 @@ void DrawGrid(HDC dc, const RECT& client) {
     }
 }
 
-void PaintWindow(HWND window) {
+void GridWindow::Paint() {
     PAINTSTRUCT paint{};
-    HDC screen = BeginPaint(window, &paint);
+    HDC screen = BeginPaint(*this, &paint);
     RECT client{};
-    GetClientRect(window, &client);
+    GetClientRect(*this, &client);
     const int width = client.right;
     const int height = client.bottom;
 
     if (width > 0 && height > 0) {
-        if (!g.backBitmap || g.backSize.cx != width || g.backSize.cy != height) {
-            if (g.backBitmap) {
-                DeleteObject(g.backBitmap);
+        if (!backBitmap_ || backSize_.cx != width || backSize_.cy != height) {
+            if (backBitmap_) {
+                DeleteObject(backBitmap_);
             }
-            g.backBitmap = CreateCompatibleBitmap(screen, width, height);
-            g.backSize = {width, height};
+            backBitmap_ = CreateCompatibleBitmap(screen, width, height);
+            backSize_ = {width, height};
         }
         HDC memory = CreateCompatibleDC(screen);
-        HGDIOBJ old = SelectObject(memory, g.backBitmap);
+        HGDIOBJ old = SelectObject(memory, backBitmap_);
         DrawGrid(memory, client);
         BitBlt(screen, paint.rcPaint.left, paint.rcPaint.top, paint.rcPaint.right - paint.rcPaint.left,
                paint.rcPaint.bottom - paint.rcPaint.top, memory, paint.rcPaint.left, paint.rcPaint.top, SRCCOPY);
         SelectObject(memory, old);
         DeleteDC(memory);
     }
-    EndPaint(window, &paint);
+    EndPaint(*this, &paint);
 }
 
-}
+}  // namespace app
